@@ -97,6 +97,11 @@ protected:
 
 public:
     // Helper to get the currently equipped weapon
+    UFUNCTION(BlueprintPure, Category = "Weapon")
     ABaseWeapon* GetCurrentWeapon() const;
+
+    // Getter for WeaponInventoryComponent
+    UFUNCTION(BlueprintPure, Category = "Weapon")
+    UWeaponInventoryComponent* GetWeaponInventoryComponent() const { return WeaponInventoryComponent; }
 
 };

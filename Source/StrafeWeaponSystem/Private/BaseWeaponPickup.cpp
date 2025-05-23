@@ -6,8 +6,9 @@
 #include "StrafeCharacter.h"
 #include "WeaponInventoryComponent.h"
 #include "BaseWeapon.h"
-#include "Net/UnrealNetwork.h" // Required for DOREPLIFETIME
+#include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
+#include "Engine/Engine.h" // For debug messages
 
 ABaseWeaponPickup::ABaseWeaponPickup()
 {
@@ -38,15 +39,35 @@ void ABaseWeaponPickup::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 void ABaseWeaponPickup::BeginPlay()
 {
     Super::BeginPlay();
-    // Ensure initial state is correctly set visually, especially for clients if spawned after server sets bIsActive
+
+    // Bind overlap events
+    if (CollisionSphere)
+    {
+        CollisionSphere->OnComponentBeginOverlap.AddDynamic(this, &ABaseWeaponPickup::OnSphereBeginOverlap);
+    }
+
+    // Ensure initial state is correctly set visually
     OnRep_IsActive();
+
+    // Debug: Log pickup initialization
+    if (WeaponClassToGrant)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("WeaponPickup '%s' initialized with weapon class: %s"),
+            *GetName(), *WeaponClassToGrant->GetName());
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("WeaponPickup '%s' has NO weapon class assigned!"), *GetName());
+    }
 }
 
-void ABaseWeaponPickup::NotifyActorBeginOverlap(AActor* OtherActor)
+void ABaseWeaponPickup::OnSphereBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+    UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-    Super::NotifyActorBeginOverlap(OtherActor);
+    // Debug log
+    UE_LOG(LogTemp, Warning, TEXT("WeaponPickup overlap with: %s"), OtherActor ? *OtherActor->GetName() : TEXT("nullptr"));
 
-    if (HasAuthority() && bIsActive)
+    if (HasAuthority() && bIsActive && OtherActor)
     {
         AStrafeCharacter* Character = Cast<AStrafeCharacter>(OtherActor);
         if (Character)
@@ -56,29 +77,66 @@ void ABaseWeaponPickup::NotifyActorBeginOverlap(AActor* OtherActor)
     }
 }
 
+void ABaseWeaponPickup::NotifyActorBeginOverlap(AActor* OtherActor)
+{
+    Super::NotifyActorBeginOverlap(OtherActor);
+
+    // This is a backup in case the component overlap doesn't fire
+    if (HasAuthority() && bIsActive && OtherActor)
+    {
+        AStrafeCharacter* Character = Cast<AStrafeCharacter>(OtherActor);
+        if (Character)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("WeaponPickup NotifyActorBeginOverlap fallback with: %s"),
+                *Character->GetName());
+            ProcessPickup(Character);
+        }
+    }
+}
+
 void ABaseWeaponPickup::ProcessPickup(AStrafeCharacter* PickingCharacter)
 {
     if (!PickingCharacter || !WeaponClassToGrant)
     {
+        UE_LOG(LogTemp, Error, TEXT("ProcessPickup failed - Character: %s, WeaponClass: %s"),
+            PickingCharacter ? TEXT("Valid") : TEXT("nullptr"),
+            WeaponClassToGrant ? TEXT("Valid") : TEXT("nullptr"));
         return;
     }
 
-    UWeaponInventoryComponent* Inventory = PickingCharacter->FindComponentByClass<UWeaponInventoryComponent>();
-    if (Inventory)
+    // Get the inventory component directly from the character
+    UWeaponInventoryComponent* Inventory = PickingCharacter->GetWeaponInventoryComponent();
+
+    if (!Inventory)
     {
-        Inventory->AddWeapon(WeaponClassToGrant); // AddWeapon handles giving ammo if already possessed
+        UE_LOG(LogTemp, Error, TEXT("No WeaponInventoryComponent found on character: %s"),
+            *PickingCharacter->GetName());
+        return;
+    }
 
-        Multicast_OnPickedUpEffects(); // Replicated effects
+    UE_LOG(LogTemp, Warning, TEXT("Processing pickup - Adding weapon: %s to character: %s"),
+        *WeaponClassToGrant->GetName(), *PickingCharacter->GetName());
 
-        if (bDestroyOnPickup)
-        {
-            Destroy();
-        }
-        else
-        {
-            SetPickupActiveState(false); // Server deactivates
-            GetWorldTimerManager().SetTimer(RespawnTimerHandle, this, &ABaseWeaponPickup::AttemptRespawn, RespawnTime, false);
-        }
+    // Add the weapon
+    bool bWeaponAdded = Inventory->AddWeapon(WeaponClassToGrant);
+
+    // If this is the first weapon, equip it automatically
+    if (bWeaponAdded && !Inventory->GetCurrentWeapon())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("First weapon pickup - auto-equipping"));
+        Inventory->EquipWeapon(WeaponClassToGrant);
+    }
+
+    Multicast_OnPickedUpEffects(); // Replicated effects
+
+    if (bDestroyOnPickup)
+    {
+        Destroy();
+    }
+    else
+    {
+        SetPickupActiveState(false); // Server deactivates
+        GetWorldTimerManager().SetTimer(RespawnTimerHandle, this, &ABaseWeaponPickup::AttemptRespawn, RespawnTime, false);
     }
 }
 
@@ -91,7 +149,6 @@ void ABaseWeaponPickup::Multicast_OnPickedUpEffects_Implementation()
     // UGameplayStatics::PlaySoundAtLocation(this, PickupSound, GetActorLocation());
     // UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), PickupEffect, GetActorTransform());
 }
-
 
 void ABaseWeaponPickup::AttemptRespawn()
 {
