@@ -124,5 +124,9 @@ protected:
     void RegisterProjectile(AProjectileBase* Projectile);
     void UnregisterProjectile(AProjectileBase* Projectile);
 
+private:
+    UFUNCTION()
+    void OnProjectileDestroyed(AActor* DestroyedActor);
+
     friend class AProjectileBase;
 };

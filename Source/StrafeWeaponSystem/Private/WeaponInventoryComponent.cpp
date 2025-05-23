@@ -45,6 +45,11 @@ void UWeaponInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 
 bool UWeaponInventoryComponent::AddWeapon(TSubclassOf<ABaseWeapon> WeaponClass)
 {
+    if (!WeaponClass)
+    {
+        return false;
+    }
+
     if (!GetOwner()->HasAuthority())
     {
         ServerAddWeapon(WeaponClass);
@@ -96,6 +101,18 @@ void UWeaponInventoryComponent::EquipWeapon(TSubclassOf<ABaseWeapon> WeaponClass
     if (!GetOwner()->HasAuthority())
     {
         ServerEquipWeapon(WeaponClass);
+        return;
+    }
+
+    // Handle empty weapon class (unequip all)
+    if (!WeaponClass)
+    {
+        if (CurrentWeapon)
+        {
+            CurrentWeapon->Unequip();
+            CurrentWeapon = nullptr;
+            OnRep_CurrentWeapon();
+        }
         return;
     }
 

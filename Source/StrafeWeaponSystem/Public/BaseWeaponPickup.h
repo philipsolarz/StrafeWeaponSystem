@@ -51,7 +51,7 @@ protected:
     virtual void NotifyActorBeginOverlap(AActor* OtherActor) override;
 
     UFUNCTION() // Server-side logic
-        void ProcessPickup(AStrafeCharacter* PickingCharacter);
+    void ProcessPickup(AStrafeCharacter* PickingCharacter);
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Pickup")
     void OnPickedUpEffectsBP(); // For sounds/VFX in Blueprint
@@ -60,7 +60,7 @@ protected:
     void OnRespawnEffectsBP(); // For sounds/VFX in Blueprint
 
     UFUNCTION(NetMulticast, Reliable) // For effects that need to be precisely timed on all clients
-        void Multicast_OnPickedUpEffects();
+    void Multicast_OnPickedUpEffects();
 
 
     void AttemptRespawn();

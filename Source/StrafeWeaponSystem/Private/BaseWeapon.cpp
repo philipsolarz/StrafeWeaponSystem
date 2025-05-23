@@ -3,6 +3,7 @@
 #include "ProjectileBase.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/Controller.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
@@ -110,12 +111,27 @@ void ABaseWeapon::PrimaryFireInternal()
         SpawnParams.Owner = GetOwner();
         SpawnParams.Instigator = Cast<APawn>(GetOwner());
 
-        FVector MuzzleLocation = WeaponMesh->GetSocketLocation("Muzzle");
-        FRotator MuzzleRotation = WeaponMesh->GetSocketRotation("Muzzle");
+        // Get spawn transform with validation
+        FVector MuzzleLocation = GetActorLocation() + GetActorForwardVector() * 100.0f; // Default offset
+        FRotator MuzzleRotation = GetActorRotation();
 
+        // Try to use muzzle socket if available
+        if (WeaponMesh && WeaponMesh->DoesSocketExist("Muzzle"))
+        {
+            MuzzleLocation = WeaponMesh->GetSocketLocation("Muzzle");
+            MuzzleRotation = WeaponMesh->GetSocketRotation("Muzzle");
+        }
+
+        // Use character's aim direction
         if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
         {
-            MuzzleRotation = Character->GetControlRotation();
+            if (AController* Controller = Character->GetController())
+            {
+                MuzzleRotation = Controller->GetControlRotation();
+                // Adjust location to be in front of camera
+                FVector CameraLocation = Character->GetActorLocation() + FVector(0, 0, Character->BaseEyeHeight);
+                MuzzleLocation = CameraLocation + MuzzleRotation.Vector() * 150.0f;
+            }
         }
 
         AProjectileBase* Projectile = GetWorld()->SpawnActor<AProjectileBase>(
@@ -223,6 +239,7 @@ void ABaseWeapon::Equip(ACharacter* NewOwner)
         return;
 
     SetOwner(NewOwner);
+    SetInstigator(NewOwner);
     bIsEquipped = true;
     SetActorHiddenInGame(false);
 
@@ -255,8 +272,28 @@ void ABaseWeapon::OnRep_CurrentAmmo()
 
 void ABaseWeapon::RegisterProjectile(AProjectileBase* Projectile)
 {
+    if (Projectile && !ActiveProjectiles.Contains(Projectile))
+    {
+        ActiveProjectiles.Add(Projectile);
+
+        // Set up delegate to remove projectile when destroyed
+        Projectile->OnDestroyed.AddDynamic(this, &ABaseWeapon::OnProjectileDestroyed);
+    }
 }
 
 void ABaseWeapon::UnregisterProjectile(AProjectileBase* Projectile)
 {
+    if (Projectile)
+    {
+        ActiveProjectiles.Remove(Projectile);
+        Projectile->OnDestroyed.RemoveDynamic(this, &ABaseWeapon::OnProjectileDestroyed);
+    }
+}
+
+void ABaseWeapon::OnProjectileDestroyed(AActor* DestroyedActor)
+{
+    if (AProjectileBase* Projectile = Cast<AProjectileBase>(DestroyedActor))
+    {
+        UnregisterProjectile(Projectile);
+    }
 }
