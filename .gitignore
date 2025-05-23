@@ -74,4 +74,13 @@ Plugins/**/Intermediate/*
 DerivedDataCache/*
 
 # Content
-Content/*
+# Content/*
+Content/__ExternalActors__
+Content/__ExternalObjects__
+Content/Characters
+Content/Collections
+Content/Developers
+Content/FPWeapon
+Content/LevelPrototyping
+Content/Maps
+Content/StarterContent
