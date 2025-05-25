@@ -4,6 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Engine/Texture2D.h"
+#include "Sound/SoundBase.h"
+#include "Animation/AnimMontage.h"
 
 #include "WeaponDataAsset.generated.h"
 
@@ -75,4 +78,41 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
     UAnimationAsset* FireAnimation;
+
+    // NEW PROPERTIES FOR TASK 1.1 //
+
+    // UI Properties
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
+    UTexture2D* CrosshairTexture;
+
+    // Sound Properties
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound")
+    USoundBase* EquipSound; // Sound played when this weapon is equipped by the character
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sound")
+    USoundBase* PickupSound; // Sound for when this specific weapon type is picked up by the player, distinct from the generic pickup actor's sound
+
+    // Effect Socket Properties
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effects")
+    FName MuzzleFlashSocketName = "Muzzle";
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effects")
+    FName FireSoundSocketName = "Muzzle"; // Often the same as muzzle flash, but allows separate configuration
+
+    // Weapon Attachment Properties
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Attachment")
+    FName LeftHandIKSocketName; // For potential two-handed weapon animations using IK
+
+    // Animation Properties (for future use but defined here for completeness)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+    UAnimMontage* FireMontage_1P;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+    UAnimMontage* FireMontage_3P;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+    UAnimMontage* EquipAnimation_1P;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+    UAnimMontage* EquipAnimation_3P;
 };
