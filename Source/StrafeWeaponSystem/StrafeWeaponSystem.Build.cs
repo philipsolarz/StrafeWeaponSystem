@@ -8,7 +8,7 @@ public class StrafeWeaponSystem : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "Niagara", "GameplayTags", "GameplayAbilities", "GameplayTasks" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "Niagara", "GameplayTags", "GameplayAbilities", "GameplayTasks", "UMG" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
