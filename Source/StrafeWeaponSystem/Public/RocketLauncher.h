@@ -18,7 +18,7 @@ public:
     ARocketLauncher();
 
 protected:
-    virtual void SecondaryFireInternal() override;
+    //virtual void SecondaryFireInternal() override;
 
     void DetonateNextRocket();
 };

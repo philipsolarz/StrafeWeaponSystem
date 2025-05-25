@@ -5,101 +5,140 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "InputActionValue.h" // Required for FInputActionValue
+#include "AbilitySystemInterface.h" // Required for IAbilitySystemInterface
+#include "GameplayTagContainer.h" // Required for FGameplayTag 
+#include "GameplayAbilitySpec.h"
 #include "StrafeCharacter.generated.h"
 
 class UWeaponInventoryComponent;
 class ABaseWeapon;
 class UInputAction;
 class UInputMappingContext;
+class UAbilitySystemComponent; // Forward declaration
+class UStrafeAttributeSet;   // Forward declaration
+class UGameplayEffect;       // Forward declaration
+class UGameplayAbility;      // Forward declaration
 
 UCLASS()
-class STRAFEWEAPONSYSTEM_API AStrafeCharacter : public ACharacter
+class STRAFEWEAPONSYSTEM_API AStrafeCharacter : public ACharacter, public IAbilitySystemInterface
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
 
 public:
-    AStrafeCharacter();
+	AStrafeCharacter();
+
+	//~ Begin IAbilitySystemInterface
+	/** Returns our Ability System Component. */
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	//~ End IAbilitySystemInterface
+
+	UPROPERTY()
+	TObjectPtr<UStrafeAttributeSet> AttributeSet;
 
 protected:
-    virtual void BeginPlay() override;
+	virtual void BeginPlay() override;
+	virtual void PossessedBy(AController* NewController) override;
+	virtual void OnRep_PlayerState() override;
 
-    // COMPONENTS
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-    UWeaponInventoryComponent* WeaponInventoryComponent;
 
-    // WEAPON PROPERTIES
-    UPROPERTY(EditDefaultsOnly, Category = "Weapons")
-    TSubclassOf<ABaseWeapon> StartingWeaponClass;
+	// COMPONENTS
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UWeaponInventoryComponent* WeaponInventoryComponent;
 
-    // INPUT MAPPING CONTEXTS
-    UPROPERTY(EditDefaultsOnly, Category = "Input")
-    UInputMappingContext* MovementMappingContext; // For movement and look actions
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Abilities, meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Input")
-    UInputMappingContext* WeaponMappingContext; // For weapon-related actions
+	// WEAPON PROPERTIES
+	UPROPERTY(EditDefaultsOnly, Category = "Weapons")
+	TSubclassOf<ABaseWeapon> StartingWeaponClass;
 
-    // INPUT ACTIONS
-    // Movement
-    UPROPERTY(EditDefaultsOnly, Category = "Input|Movement")
-    UInputAction* MoveAction;
+	// INPUT MAPPING CONTEXTS
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	UInputMappingContext* MovementMappingContext; // For movement and look actions
 
-    UPROPERTY(EditDefaultsOnly, Category = "Input|Movement")
-    UInputAction* LookAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	UInputMappingContext* WeaponMappingContext; // For weapon-related actions
 
-    UPROPERTY(EditDefaultsOnly, Category = "Input|Movement")
-    UInputAction* JumpAction;
+	// INPUT ACTIONS
+	// Movement
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Movement")
+	UInputAction* MoveAction;
 
-    // Weapon
-    UPROPERTY(EditDefaultsOnly, Category = "Input|Weapon")
-    UInputAction* PrimaryFireAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Movement")
+	UInputAction* LookAction;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Input|Weapon")
-    UInputAction* SecondaryFireAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Movement")
+	UInputAction* JumpAction;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Input|Weapon")
-    UInputAction* NextWeaponAction;
+	// Weapon
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Weapon")
+	UInputAction* PrimaryFireAction;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Input|Weapon")
-    UInputAction* PreviousWeaponAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Weapon")
+	UInputAction* SecondaryFireAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Weapon")
+	UInputAction* NextWeaponAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Weapon")
+	UInputAction* PreviousWeaponAction;
+
+	// Gameplay Tags for input actions
+	UPROPERTY(EditDefaultsOnly, Category = "Input|GameplayTags")
+	FGameplayTag PrimaryFireInputTag;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input|GameplayTags")
+	FGameplayTag SecondaryFireInputTag;
 
 
 public:
-    virtual void Tick(float DeltaTime) override;
-    virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	virtual void Tick(float DeltaTime) override;
+	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-    // INPUT HANDLER FUNCTIONS
+	UFUNCTION(BlueprintCallable, Category = "Abilities")
+	void InitializeAttributes();
+
+	UFUNCTION(BlueprintCallable, Category = "Abilities")
+	void GiveDefaultAbilities();
+
+	// Called when a weapon is equipped by the inventory component
+	UFUNCTION()
+	void OnWeaponEquipped(ABaseWeapon* NewWeapon);
+
+
 protected:
-    // Movement
-    void Move(const FInputActionValue& Value);
-    void Look(const FInputActionValue& Value);
-    // Jump is handled by ACharacter's Jump() and StopJumping() which can be directly bound or overridden if needed.
+	// INPUT HANDLER FUNCTIONS
+	void Move(const FInputActionValue& Value);
+	void Look(const FInputActionValue& Value);
 
-    // Weapon
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    void StartPrimaryFire();
+	// Input handlers that will attempt to activate abilities
+	void Input_PrimaryFire_Pressed();
+	void Input_PrimaryFire_Released(); // If your ability needs a release trigger
+	void Input_SecondaryFire_Pressed();
+	void Input_SecondaryFire_Released(); // If your ability needs a release trigger
 
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    void StopPrimaryFire();
 
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    void StartSecondaryFire();
-
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    void StopSecondaryFire();
-
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    void NextWeapon();
-
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    void PreviousWeapon();
+	// Weapon Switching (old methods, might be refactored with GAS or remain as is)
+	void NextWeapon();
+	void PreviousWeapon();
 
 public:
-    // Helper to get the currently equipped weapon
-    UFUNCTION(BlueprintPure, Category = "Weapon")
-    ABaseWeapon* GetCurrentWeapon() const;
+	// Helper to get the currently equipped weapon
+	UFUNCTION(BlueprintPure, Category = "Weapon")
+	ABaseWeapon* GetCurrentWeapon() const;
 
-    // Getter for WeaponInventoryComponent
-    UFUNCTION(BlueprintPure, Category = "Weapon")
-    UWeaponInventoryComponent* GetWeaponInventoryComponent() const { return WeaponInventoryComponent; }
+	// Getter for WeaponInventoryComponent
+	UFUNCTION(BlueprintPure, Category = "Weapon")
+	UWeaponInventoryComponent* GetWeaponInventoryComponent() const { return WeaponInventoryComponent; }
 
+private:
+	// Store handles to granted weapon abilities to be able to remove them
+	TArray<FGameplayAbilitySpecHandle> CurrentWeaponAbilityHandles;
+
+	// Default attribute values (consider moving to a DataTable later)
+	UPROPERTY(EditDefaultsOnly, Category = "Abilities|Defaults")
+	TSubclassOf<UGameplayEffect> DefaultAttributesEffect;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Abilities|Defaults")
+	TArray<TSubclassOf<UGameplayAbility>> DefaultAbilities;
 };

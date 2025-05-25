@@ -3,30 +3,32 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/NetSerialization.h"
+// #include "Engine/NetSerialization.h" // FAmmoReserve was removed
 #include "Components/ActorComponent.h"
-#include "WeaponDataAsset.h"
+// #include "WeaponDataAsset.h" // EAmmoType was here, now potentially obsolete
 #include "WeaponInventoryComponent.generated.h"
 
 class ABaseWeapon;
+class UGameplayAbility; // For TSubclassOf<UGameplayAbility>
+class UWeaponDataAsset; // Forward declare
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWeaponEquipped, ABaseWeapon*, NewWeapon);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWeaponAdded, TSubclassOf<ABaseWeapon>, WeaponClass);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWeaponAdded, TSubclassOf<ABaseWeapon>, WeaponClass); // Or ABaseWeapon* if you pass the instance
 
-USTRUCT(BlueprintType)
-struct FAmmoReserve
-{
-    GENERATED_BODY()
-
-    UPROPERTY(BlueprintReadOnly)
-    EAmmoType AmmoType = EAmmoType::None;
-
-    UPROPERTY(BlueprintReadOnly)
-    int32 Count = 0;
-
-    FAmmoReserve() {}
-    FAmmoReserve(EAmmoType InType, int32 InCount) : AmmoType(InType), Count(InCount) {}
-};
+// USTRUCT(BlueprintType) // FAmmoReserve is removed
+// struct FAmmoReserve
+// {
+//     GENERATED_BODY()
+//
+//     UPROPERTY(BlueprintReadOnly)
+//     EAmmoType AmmoType = EAmmoType::None;
+//
+//     UPROPERTY(BlueprintReadOnly)
+//     int32 Count = 0;
+//
+//     FAmmoReserve() {}
+//     FAmmoReserve(EAmmoType InType, int32 InCount) : AmmoType(InType), Count(InCount) {}
+// };
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class STRAFEWEAPONSYSTEM_API UWeaponInventoryComponent : public UActorComponent
@@ -43,14 +45,14 @@ protected:
     UPROPERTY(ReplicatedUsing = OnRep_CurrentWeapon)
     ABaseWeapon* CurrentWeapon;
 
-    UPROPERTY(ReplicatedUsing = OnRep_AmmoReserves)
-    TArray<FAmmoReserve> AmmoReserves;
+    // UPROPERTY(ReplicatedUsing = OnRep_AmmoReserves) // Removed
+    // TArray<FAmmoReserve> AmmoReserves;
 
     UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-    TArray<TSubclassOf<ABaseWeapon>> StartingWeapons;
+    TArray<TSubclassOf<ABaseWeapon>> StartingWeapons; // Still relevant for initial spawn
 
-    FTimerHandle WeaponSwitchTimer;
-    ABaseWeapon* PendingWeapon;
+    FTimerHandle WeaponSwitchTimer; // Still relevant for weapon switch delay
+    ABaseWeapon* PendingWeapon;     // Still relevant
 
 public:
     virtual void BeginPlay() override;
@@ -78,12 +80,12 @@ public:
     UFUNCTION(Server, Reliable)
     void ServerEquipWeapon(TSubclassOf<ABaseWeapon> WeaponClass);
 
-    // Ammo Management
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    void AddAmmo(EAmmoType AmmoType, int32 Amount);
-
-    UFUNCTION(BlueprintPure, Category = "Weapon")
-    int32 GetAmmoCount(EAmmoType AmmoType) const;
+    // Ammo Management - These are removed as ammo is handled by Character's AttributeSet
+    // UFUNCTION(BlueprintCallable, Category = "Weapon")
+    // void AddAmmo(EAmmoType AmmoType, int32 Amount);
+    //
+    // UFUNCTION(BlueprintPure, Category = "Weapon")
+    // int32 GetAmmoCount(EAmmoType AmmoType) const;
 
     // Query Functions
     UFUNCTION(BlueprintPure, Category = "Weapon")
@@ -93,7 +95,7 @@ public:
     bool HasWeapon(TSubclassOf<ABaseWeapon> WeaponClass) const;
 
     UFUNCTION(BlueprintPure, Category = "Weapon")
-    const TArray<ABaseWeapon*>& GetWeaponInventory() const { return WeaponInventory; }
+    const TArray<ABaseWeapon*>& GetWeaponInventoryList() const { return WeaponInventory; } // Renamed for clarity
 
     // Events
     UPROPERTY(BlueprintAssignable, Category = "Weapon")
@@ -109,13 +111,13 @@ protected:
     UFUNCTION()
     void OnRep_WeaponInventory();
 
-    UFUNCTION()
-    void OnRep_AmmoReserves();
+    // UFUNCTION() // Removed
+    // void OnRep_AmmoReserves();
 
-    void FinishWeaponSwitch();
+    void FinishWeaponSwitch(); // Still relevant
 
-    UFUNCTION(NetMulticast, Reliable)
-    void MulticastEquipWeapon(ABaseWeapon* NewWeapon);
+    UFUNCTION(NetMulticast, Reliable) // Still relevant for notifying clients of equip
+        void MulticastEquipWeaponVisuals(ABaseWeapon* NewWeapon); // Renamed for clarity, actual ability granting is server-side on Character
 
-    int32 FindAmmoReserveIndex(EAmmoType AmmoType) const;
+    // int32 FindAmmoReserveIndex(EAmmoType AmmoType) const; // Removed
 };
