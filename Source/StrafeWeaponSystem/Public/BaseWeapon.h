@@ -5,7 +5,20 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "WeaponDataAsset.h"
+#include "GameplayTagContainer.h"
 #include "BaseWeapon.generated.h"
+
+USTRUCT()
+struct FStatModifierPair
+{
+    GENERATED_BODY()
+
+    UPROPERTY()
+    FGameplayTag Tag;
+
+    UPROPERTY()
+    float        Value = 0.f;
+};
 
 class AProjectileBase;
 
@@ -48,6 +61,11 @@ protected:
     UPROPERTY(BlueprintReadOnly, Category = "Weapon")
     TArray<AProjectileBase*> ActiveProjectiles;
 
+    /** Map of stat modifiers applied to this weapon (e.g., from power-ups) */
+    //UPROPERTY(VisibleInstanceOnly, BlueprintReadWrite, Category = "Weapon|Modifiers", Replicated) Should maybe be replicated, keep in mind for eventual GAS refactoring.
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadWrite, Category = "Weapon|Modifiers", Replicated)
+    TMap<FGameplayTag, float> StatModifierValues;
+
 public:
     /* ---------- core Engine overrides ---------- */
     virtual void BeginPlay() override;
@@ -68,8 +86,42 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Weapon") void AddAmmo(int32 Amount);
     UFUNCTION(BlueprintCallable, Category = "Weapon") bool ConsumeAmmo(int32 Amount = 1);
     UFUNCTION(BlueprintPure, Category = "Weapon") int32 GetCurrentAmmo() const { return CurrentAmmo; }
-    UFUNCTION(BlueprintPure, Category = "Weapon") int32 GetMaxAmmo()     const;
     UFUNCTION(BlueprintPure, Category = "Weapon") UWeaponDataAsset* GetWeaponData() const { return WeaponData; }
+
+    /* ---------- stat getters with modifier support ---------- */
+    UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
+    virtual float GetPrimaryFireRate() const;
+
+    UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
+    virtual float GetSecondaryFireRate() const;
+
+    UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
+    virtual int32 GetMaxAmmo() const;
+
+    UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
+    virtual float GetWeaponSwitchTime() const;
+
+    UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
+    virtual float GetDamageMultiplier() const;
+
+    UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
+    virtual int32 GetMaxActiveProjectiles() const;
+
+    /* ---------- stat modifier management ---------- */
+    UFUNCTION(BlueprintCallable, Category = "Weapon|Modifiers", meta = (CallInEditor = "true"))
+    virtual void AddStatModifier(FGameplayTag ModifierTag, float Value);
+
+    UFUNCTION(BlueprintCallable, Category = "Weapon|Modifiers", meta = (CallInEditor = "true"))
+    virtual void RemoveStatModifier(FGameplayTag ModifierTag);
+
+    UFUNCTION(BlueprintCallable, Category = "Weapon|Modifiers", meta = (CallInEditor = "true"))
+    virtual void ClearAllStatModifiers();
+
+    UFUNCTION(BlueprintPure, Category = "Weapon|Modifiers")
+    virtual float GetStatModifierValue(FGameplayTag ModifierTag) const;
+
+    UFUNCTION(BlueprintPure, Category = "Weapon|Modifiers")
+    virtual bool HasStatModifier(FGameplayTag ModifierTag) const;
 
     /* ---------- equipping ---------- */
     UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void Equip(ACharacter* NewOwner);
@@ -99,3 +151,33 @@ protected:
 private:
     friend class AProjectileBase;
 };
+
+/*
+ * BLUEPRINT IMPLEMENTATION GUIDE: Weapon Stat Modifiers
+ *
+ * 1. Setting up Gameplay Tags:
+ *    - Go to Project Settings -> Project -> Gameplay Tags
+ *    - Add tags for different modifiers, for example:
+ *      - Weapon.Modifier.Damage.Multiplier (multiplicative damage boost)
+ *      - Weapon.Modifier.FireRate.Multiplier (multiplicative fire rate boost)
+ *      - Weapon.Modifier.MaxAmmo.Additive (additive max ammo increase)
+ *      - Weapon.Modifier.ProjectileSpeed.Multiplier
+ *
+ * 2. Applying Modifiers from Blueprints (e.g., Power-up Pickup):
+ *    - On overlap with player, get the player's current weapon
+ *    - Call AddStatModifier with the appropriate tag and value
+ *    - Example: AddStatModifier("Weapon.Modifier.Damage.Multiplier", 2.0) for double damage
+ *
+ * 3. Removing Modifiers (e.g., when power-up expires):
+ *    - Call RemoveStatModifier with the same tag used when adding
+ *    - Or use ClearAllStatModifiers to remove all modifiers at once
+ *
+ * 4. UI Integration:
+ *    - UI widgets should call the getter functions (GetPrimaryFireRate, GetDamageMultiplier, etc.)
+ *    - These functions automatically apply active modifiers to base stats
+ *    - Bind UI updates to weapon events like OnAmmoChanged
+ *
+ * 5. Creating Custom Modifiers:
+ *    - For weapon-specific modifiers, override the getter functions in child classes
+ *    - Check for custom tags and apply special logic as needed
+ */

@@ -176,11 +176,11 @@ void UWeaponInventoryComponent::EquipWeapon(TSubclassOf<ABaseWeapon> WeaponClass
 
     PendingWeapon = WeaponToEquip;
 
-    // Calculate switch time
-    float SwitchTime = 0.5f;
-    if (CurrentWeapon && CurrentWeapon->GetWeaponData())
+    // Calculate switch time using the modifier-aware getter
+    float SwitchTime = 0.5f; // Default fallback
+    if (CurrentWeapon)
     {
-        SwitchTime = CurrentWeapon->GetWeaponData()->WeaponStats.WeaponSwitchTime;
+        SwitchTime = CurrentWeapon->GetWeaponSwitchTime(); // Now uses modifier-aware getter
     }
 
     UE_LOG(LogTemp, Warning, TEXT("Starting weapon switch, time: %f"), SwitchTime);
