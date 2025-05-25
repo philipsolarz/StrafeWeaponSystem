@@ -11,8 +11,6 @@ class UWeaponInventoryComponent;
 class ABaseWeapon;
 class UInputAction;
 class UInputMappingContext;
-class USpringArmComponent; // For camera boom
-class UCameraComponent;    // For camera
 
 UCLASS()
 class STRAFEWEAPONSYSTEM_API AStrafeCharacter : public ACharacter

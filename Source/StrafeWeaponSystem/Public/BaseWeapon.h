@@ -22,111 +22,80 @@ public:
     ABaseWeapon();
 
 protected:
+    /** Skeletal mesh for the weapon itself */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     USkeletalMeshComponent* WeaponMesh;
 
+    /** Socket on the character to attach to (editable per-weapon in BP or DataAsset) */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Attachment")
+    FName AttachSocketName = "WeaponSocket";
+
+    /** Data that defines ammo, fire rate, etc. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
     UWeaponDataAsset* WeaponData;
 
+    /** Current ammo in the clip (replicated) */
     UPROPERTY(ReplicatedUsing = OnRep_CurrentAmmo, BlueprintReadOnly, Category = "Weapon")
-    int32 CurrentAmmo;
+    int32 CurrentAmmo = 0;
 
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon")
-    bool bIsEquipped;
+    bool  bIsEquipped = false;
 
     FTimerHandle PrimaryFireTimer;
     FTimerHandle SecondaryFireTimer;
 
+    /** Active projectiles fired by this weapon */
     UPROPERTY(BlueprintReadOnly, Category = "Weapon")
     TArray<AProjectileBase*> ActiveProjectiles;
 
 public:
-    // Core Functions
+    /* ---------- core Engine overrides ---------- */
     virtual void BeginPlay() override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-    // Weapon Actions
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    virtual void StartPrimaryFire();
+    /* ---------- public weapon interface ---------- */
+    UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void StartPrimaryFire();
+    UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void StopPrimaryFire();
+    UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void StartSecondaryFire();
+    UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void StopSecondaryFire();
 
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    virtual void StopPrimaryFire();
+    UFUNCTION(Server, Reliable) void ServerStartPrimaryFire();
+    UFUNCTION(Server, Reliable) void ServerStopPrimaryFire();
+    UFUNCTION(Server, Reliable) void ServerStartSecondaryFire();
+    UFUNCTION(Server, Reliable) void ServerStopSecondaryFire();
 
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    virtual void StartSecondaryFire();
+    /* ---------- ammo ---------- */
+    UFUNCTION(BlueprintCallable, Category = "Weapon") void AddAmmo(int32 Amount);
+    UFUNCTION(BlueprintCallable, Category = "Weapon") bool ConsumeAmmo(int32 Amount = 1);
+    UFUNCTION(BlueprintPure, Category = "Weapon") int32 GetCurrentAmmo() const { return CurrentAmmo; }
+    UFUNCTION(BlueprintPure, Category = "Weapon") int32 GetMaxAmmo()     const;
+    UFUNCTION(BlueprintPure, Category = "Weapon") UWeaponDataAsset* GetWeaponData() const { return WeaponData; }
 
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    virtual void StopSecondaryFire();
+    /* ---------- equipping ---------- */
+    UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void Equip(ACharacter* NewOwner);
+    UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void Unequip();
 
-    UFUNCTION(Server, Reliable)
-    void ServerStartPrimaryFire();
-
-    UFUNCTION(Server, Reliable)
-    void ServerStopPrimaryFire();
-
-    UFUNCTION(Server, Reliable)
-    void ServerStartSecondaryFire();
-
-    UFUNCTION(Server, Reliable)
-    void ServerStopSecondaryFire();
-
-    // Ammo Management
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    void AddAmmo(int32 Amount);
-
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    bool ConsumeAmmo(int32 Amount = 1);
-
-    UFUNCTION(BlueprintPure, Category = "Weapon")
-    int32 GetCurrentAmmo() const { return CurrentAmmo; }
-
-    UFUNCTION(BlueprintPure, Category = "Weapon")
-    int32 GetMaxAmmo() const;
-
-    UFUNCTION(BlueprintPure, Category = "Weapon")
-    UWeaponDataAsset* GetWeaponData() const { return WeaponData; }
-
-    // Equipment
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    virtual void Equip(ACharacter* NewOwner);
-
-    UFUNCTION(BlueprintCallable, Category = "Weapon")
-    virtual void Unequip();
-
-    // Events
-    UPROPERTY(BlueprintAssignable, Category = "Weapon")
-    FOnWeaponFired OnWeaponFired;
-
-    UPROPERTY(BlueprintAssignable, Category = "Weapon")
-    FOnOutOfAmmo OnOutOfAmmo;
-
-    UPROPERTY(BlueprintAssignable, Category = "Weapon")
-    FOnAmmoChanged OnAmmoChanged;
+    /* ---------- gameplay events ---------- */
+    UPROPERTY(BlueprintAssignable, Category = "Weapon") FOnWeaponFired  OnWeaponFired;
+    UPROPERTY(BlueprintAssignable, Category = "Weapon") FOnOutOfAmmo    OnOutOfAmmo;
+    UPROPERTY(BlueprintAssignable, Category = "Weapon") FOnAmmoChanged  OnAmmoChanged;
 
 protected:
-    // Internal Fire Logic
+    /* ---------- internal helpers ---------- */
     virtual void PrimaryFireInternal();
     virtual void SecondaryFireInternal();
 
-    UFUNCTION(BlueprintImplementableEvent, Category = "Weapon")
-    void OnPrimaryFire();
+    UFUNCTION(BlueprintImplementableEvent, Category = "Weapon") void OnPrimaryFire();
+    UFUNCTION(BlueprintImplementableEvent, Category = "Weapon") void OnSecondaryFire();
 
-    UFUNCTION(BlueprintImplementableEvent, Category = "Weapon")
-    void OnSecondaryFire();
+    UFUNCTION(NetMulticast, Unreliable) void MulticastFireEffects();
+    UFUNCTION() void OnRep_CurrentAmmo();
 
-    UFUNCTION(NetMulticast, Unreliable)
-    void MulticastFireEffects();
-
-    UFUNCTION()
-    void OnRep_CurrentAmmo();
-
-    // Projectile Management
+    /* projectile bookkeeping */
     void RegisterProjectile(AProjectileBase* Projectile);
     void UnregisterProjectile(AProjectileBase* Projectile);
+    UFUNCTION() void OnProjectileDestroyed(AActor* DestroyedActor);
 
 private:
-    UFUNCTION()
-    void OnProjectileDestroyed(AActor* DestroyedActor);
-
     friend class AProjectileBase;
 };

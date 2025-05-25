@@ -140,6 +140,9 @@ void UWeaponInventoryComponent::EquipWeapon(TSubclassOf<ABaseWeapon> WeaponClass
     {
         if (CurrentWeapon)
         {
+            // CRITICAL: Stop firing before unequipping
+            CurrentWeapon->StopPrimaryFire();
+            CurrentWeapon->StopSecondaryFire();
             CurrentWeapon->Unequip();
             CurrentWeapon = nullptr;
             OnRep_CurrentWeapon();
@@ -191,9 +194,11 @@ void UWeaponInventoryComponent::EquipWeapon(TSubclassOf<ABaseWeapon> WeaponClass
         false
     );
 
-    // Hide current weapon
+    // CRITICAL: Stop firing and then unequip current weapon
     if (CurrentWeapon)
     {
+        CurrentWeapon->StopPrimaryFire();
+        CurrentWeapon->StopSecondaryFire();
         CurrentWeapon->Unequip();
     }
 }

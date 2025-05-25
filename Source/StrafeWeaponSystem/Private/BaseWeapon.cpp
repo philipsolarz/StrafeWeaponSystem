@@ -99,6 +99,13 @@ void ABaseWeapon::ServerStopPrimaryFire_Implementation()
 
 void ABaseWeapon::PrimaryFireInternal()
 {
+    // Safety check: Don't fire if not equipped
+    if (!bIsEquipped)
+    {
+        StopPrimaryFire();
+        return;
+    }
+
     if (!WeaponData || !WeaponData->WeaponStats.PrimaryProjectileClass)
     {
         UE_LOG(LogTemp, Error, TEXT("Cannot fire - no WeaponData or ProjectileClass"));
@@ -291,6 +298,13 @@ void ABaseWeapon::ServerStopSecondaryFire_Implementation()
 
 void ABaseWeapon::SecondaryFireInternal()
 {
+    // Safety check: Don't fire if not equipped
+    if (!bIsEquipped)
+    {
+        StopSecondaryFire();
+        return;
+    }
+
     // Base implementation does nothing
     // Derived classes override this for specific behavior
     OnSecondaryFire();
@@ -324,10 +338,17 @@ void ABaseWeapon::Unequip()
 {
     UE_LOG(LogTemp, Warning, TEXT("Unequipping weapon %s"), *GetName());
 
+    // CRITICAL: Clear all firing timers first
+    if (GetWorld())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(PrimaryFireTimer);
+        GetWorld()->GetTimerManager().ClearTimer(SecondaryFireTimer);
+    }
+
     bIsEquipped = false;
     SetActorHiddenInGame(true);
 
-    // Stop any ongoing fire
+    // Stop any ongoing fire (this is redundant but ensures cleanup)
     StopPrimaryFire();
     StopSecondaryFire();
 }
