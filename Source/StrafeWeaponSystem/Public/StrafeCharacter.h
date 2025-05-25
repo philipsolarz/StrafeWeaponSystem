@@ -11,8 +11,6 @@ class UWeaponInventoryComponent;
 class ABaseWeapon;
 class UInputAction;
 class UInputMappingContext;
-class USpringArmComponent; // For camera boom
-class UCameraComponent;    // For camera
 
 UCLASS()
 class STRAFEWEAPONSYSTEM_API AStrafeCharacter : public ACharacter
@@ -97,6 +95,11 @@ protected:
 
 public:
     // Helper to get the currently equipped weapon
+    UFUNCTION(BlueprintPure, Category = "Weapon")
     ABaseWeapon* GetCurrentWeapon() const;
+
+    // Getter for WeaponInventoryComponent
+    UFUNCTION(BlueprintPure, Category = "Weapon")
+    UWeaponInventoryComponent* GetWeaponInventoryComponent() const { return WeaponInventoryComponent; }
 
 };

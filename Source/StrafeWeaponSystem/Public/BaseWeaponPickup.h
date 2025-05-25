@@ -8,8 +8,8 @@
 
 class USphereComponent;
 class UStaticMeshComponent;
-class ABaseWeapon; // Forward declaration
-class AStrafeCharacter; // Forward declaration
+class ABaseWeapon;
+class AStrafeCharacter;
 
 UCLASS()
 class STRAFEWEAPONSYSTEM_API ABaseWeaponPickup : public AActor
@@ -48,10 +48,15 @@ protected:
     UFUNCTION()
     void OnRep_IsActive();
 
+    // Use component overlap for more reliable detection
+    UFUNCTION()
+    void OnSphereBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+        UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
     virtual void NotifyActorBeginOverlap(AActor* OtherActor) override;
 
     UFUNCTION() // Server-side logic
-    void ProcessPickup(AStrafeCharacter* PickingCharacter);
+        void ProcessPickup(AStrafeCharacter* PickingCharacter);
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Pickup")
     void OnPickedUpEffectsBP(); // For sounds/VFX in Blueprint
@@ -60,8 +65,7 @@ protected:
     void OnRespawnEffectsBP(); // For sounds/VFX in Blueprint
 
     UFUNCTION(NetMulticast, Reliable) // For effects that need to be precisely timed on all clients
-    void Multicast_OnPickedUpEffects();
-
+        void Multicast_OnPickedUpEffects();
 
     void AttemptRespawn();
     void SetPickupActiveState(bool bNewActiveState); // Server sets this

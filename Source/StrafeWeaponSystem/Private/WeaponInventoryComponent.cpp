@@ -3,6 +3,7 @@
 #include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/ActorChannel.h"
+#include "Engine/Engine.h" // For debug messages
 
 UWeaponInventoryComponent::UWeaponInventoryComponent()
 {
@@ -23,11 +24,14 @@ void UWeaponInventoryComponent::BeginPlay()
         // Add starting weapons
         for (TSubclassOf<ABaseWeapon> WeaponClass : StartingWeapons)
         {
-            AddWeapon(WeaponClass);
+            if (WeaponClass)
+            {
+                AddWeapon(WeaponClass);
+            }
         }
 
         // Equip first weapon if available
-        if (WeaponInventory.Num() > 0)
+        if (WeaponInventory.Num() > 0 && WeaponInventory[0])
         {
             EquipWeapon(WeaponInventory[0]->GetClass());
         }
@@ -47,6 +51,7 @@ bool UWeaponInventoryComponent::AddWeapon(TSubclassOf<ABaseWeapon> WeaponClass)
 {
     if (!WeaponClass)
     {
+        UE_LOG(LogTemp, Error, TEXT("AddWeapon called with null WeaponClass"));
         return false;
     }
 
@@ -56,6 +61,8 @@ bool UWeaponInventoryComponent::AddWeapon(TSubclassOf<ABaseWeapon> WeaponClass)
         return false;
     }
 
+    UE_LOG(LogTemp, Warning, TEXT("AddWeapon called for: %s"), *WeaponClass->GetName());
+
     // Check if we already have this weapon type
     for (ABaseWeapon* Weapon : WeaponInventory)
     {
@@ -64,7 +71,9 @@ bool UWeaponInventoryComponent::AddWeapon(TSubclassOf<ABaseWeapon> WeaponClass)
             // Just add ammo to existing weapon
             if (UWeaponDataAsset* WeaponData = Weapon->GetWeaponData())
             {
-                Weapon->AddAmmo(WeaponData->WeaponStats.AmmoPerPickup);
+                int32 AmmoToAdd = WeaponData->WeaponStats.AmmoPerPickup;
+                Weapon->AddAmmo(AmmoToAdd);
+                UE_LOG(LogTemp, Warning, TEXT("Weapon already owned, added %d ammo"), AmmoToAdd);
             }
             return false;
         }
@@ -75,17 +84,36 @@ bool UWeaponInventoryComponent::AddWeapon(TSubclassOf<ABaseWeapon> WeaponClass)
     SpawnParams.Owner = GetOwner();
     SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-    ABaseWeapon* NewWeapon = GetWorld()->SpawnActor<ABaseWeapon>(WeaponClass, SpawnParams);
+    // Get spawn location away from world geometry
+    FVector SpawnLocation = GetOwner()->GetActorLocation() + FVector(0, 0, 100);
+    FRotator SpawnRotation = FRotator::ZeroRotator;
+
+    ABaseWeapon* NewWeapon = GetWorld()->SpawnActor<ABaseWeapon>(WeaponClass, SpawnLocation, SpawnRotation, SpawnParams);
     if (NewWeapon)
     {
+        UE_LOG(LogTemp, Warning, TEXT("Successfully spawned weapon: %s"), *NewWeapon->GetName());
+
         WeaponInventory.Add(NewWeapon);
         NewWeapon->SetOwner(GetOwner());
+
+        // Attach to owner
         NewWeapon->AttachToComponent(GetOwner()->GetRootComponent(),
             FAttachmentTransformRules::SnapToTargetNotIncludingScale);
         NewWeapon->SetActorHiddenInGame(true);
 
         OnWeaponAdded.Broadcast(WeaponClass);
+
+        // Force replication update
+        if (GetOwner()->HasAuthority())
+        {
+            OnRep_WeaponInventory();
+        }
+
         return true;
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("Failed to spawn weapon actor"));
     }
 
     return false;
@@ -104,11 +132,17 @@ void UWeaponInventoryComponent::EquipWeapon(TSubclassOf<ABaseWeapon> WeaponClass
         return;
     }
 
+    UE_LOG(LogTemp, Warning, TEXT("EquipWeapon called for: %s"),
+        WeaponClass ? *WeaponClass->GetName() : TEXT("nullptr"));
+
     // Handle empty weapon class (unequip all)
     if (!WeaponClass)
     {
         if (CurrentWeapon)
         {
+            // CRITICAL: Stop firing before unequipping
+            CurrentWeapon->StopPrimaryFire();
+            CurrentWeapon->StopSecondaryFire();
             CurrentWeapon->Unequip();
             CurrentWeapon = nullptr;
             OnRep_CurrentWeapon();
@@ -116,40 +150,56 @@ void UWeaponInventoryComponent::EquipWeapon(TSubclassOf<ABaseWeapon> WeaponClass
         return;
     }
 
+    // Find the weapon in inventory
+    ABaseWeapon* WeaponToEquip = nullptr;
     for (ABaseWeapon* Weapon : WeaponInventory)
     {
         if (Weapon && Weapon->IsA(WeaponClass))
         {
-            // Check if we're already switching
-            if (GetWorld()->GetTimerManager().IsTimerActive(WeaponSwitchTimer))
-                return;
-
-            PendingWeapon = Weapon;
-
-            // Calculate switch time
-            float SwitchTime = 0.5f;
-            if (CurrentWeapon && CurrentWeapon->GetWeaponData())
-            {
-                SwitchTime = CurrentWeapon->GetWeaponData()->WeaponStats.WeaponSwitchTime;
-            }
-
-            // Start switch timer
-            GetWorld()->GetTimerManager().SetTimer(
-                WeaponSwitchTimer,
-                this,
-                &UWeaponInventoryComponent::FinishWeaponSwitch,
-                SwitchTime,
-                false
-            );
-
-            // Hide current weapon
-            if (CurrentWeapon)
-            {
-                CurrentWeapon->Unequip();
-            }
-
+            WeaponToEquip = Weapon;
             break;
         }
+    }
+
+    if (!WeaponToEquip)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Weapon not found in inventory: %s"), *WeaponClass->GetName());
+        return;
+    }
+
+    // Check if we're already switching
+    if (GetWorld()->GetTimerManager().IsTimerActive(WeaponSwitchTimer))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Already switching weapons, ignoring request"));
+        return;
+    }
+
+    PendingWeapon = WeaponToEquip;
+
+    // Calculate switch time
+    float SwitchTime = 0.5f;
+    if (CurrentWeapon && CurrentWeapon->GetWeaponData())
+    {
+        SwitchTime = CurrentWeapon->GetWeaponData()->WeaponStats.WeaponSwitchTime;
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("Starting weapon switch, time: %f"), SwitchTime);
+
+    // Start switch timer
+    GetWorld()->GetTimerManager().SetTimer(
+        WeaponSwitchTimer,
+        this,
+        &UWeaponInventoryComponent::FinishWeaponSwitch,
+        SwitchTime,
+        false
+    );
+
+    // CRITICAL: Stop firing and then unequip current weapon
+    if (CurrentWeapon)
+    {
+        CurrentWeapon->StopPrimaryFire();
+        CurrentWeapon->StopSecondaryFire();
+        CurrentWeapon->Unequip();
     }
 }
 
@@ -162,6 +212,8 @@ void UWeaponInventoryComponent::FinishWeaponSwitch()
 {
     if (PendingWeapon)
     {
+        UE_LOG(LogTemp, Warning, TEXT("Finishing weapon switch to: %s"), *PendingWeapon->GetName());
+
         CurrentWeapon = PendingWeapon;
         PendingWeapon = nullptr;
 
@@ -171,6 +223,10 @@ void UWeaponInventoryComponent::FinishWeaponSwitch()
         }
 
         MulticastEquipWeapon(CurrentWeapon);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("FinishWeaponSwitch called but PendingWeapon is null"));
     }
 }
 
@@ -190,6 +246,9 @@ void UWeaponInventoryComponent::NextWeapon()
         return;
 
     int32 CurrentIndex = WeaponInventory.IndexOfByKey(CurrentWeapon);
+    if (CurrentIndex == INDEX_NONE)
+        CurrentIndex = 0;
+
     int32 NextIndex = (CurrentIndex + 1) % WeaponInventory.Num();
 
     EquipWeaponByIndex(NextIndex);
@@ -201,6 +260,9 @@ void UWeaponInventoryComponent::PreviousWeapon()
         return;
 
     int32 CurrentIndex = WeaponInventory.IndexOfByKey(CurrentWeapon);
+    if (CurrentIndex == INDEX_NONE)
+        CurrentIndex = 0;
+
     int32 PrevIndex = CurrentIndex - 1;
     if (PrevIndex < 0)
         PrevIndex = WeaponInventory.Num() - 1;
@@ -231,6 +293,7 @@ bool UWeaponInventoryComponent::HasWeapon(TSubclassOf<ABaseWeapon> WeaponClass) 
 void UWeaponInventoryComponent::OnRep_WeaponInventory()
 {
     // Notify UI or other systems about inventory changes
+    UE_LOG(LogTemp, Warning, TEXT("Weapon inventory updated, count: %d"), WeaponInventory.Num());
 }
 
 void UWeaponInventoryComponent::AddAmmo(EAmmoType AmmoType, int32 Amount)
