@@ -72,7 +72,7 @@ void ABaseWeapon::Equip(ACharacter* NewOwner)
     UE_LOG(LogTemp, Warning, TEXT("Equipping weapon %s to %s"), *GetName(), *NewOwner->GetName());
 
     SetOwner(NewOwner);
-    SetInstigator(NewOwner); // Instigator is now the Character Pawn
+    SetInstigator(NewOwner);
     bIsEquipped = true;
     SetActorHiddenInGame(false);
 
@@ -84,10 +84,10 @@ void ABaseWeapon::Equip(ACharacter* NewOwner)
     if (USkeletalMeshComponent* CharacterMesh = NewOwner->GetMesh())
     {
         FAttachmentTransformRules AttachRules(EAttachmentRule::SnapToTarget, true);
-        // Use AttachSocketName from WeaponData if available, otherwise the member variable
-        FName SocketToAttach = (WeaponData && WeaponData->MuzzleFlashSocketName != NAME_None) ? WeaponData->MuzzleFlashSocketName : AttachSocketName; // This is likely an error, should be a dedicated attach socket from WeaponData or class
-        // Corrected: Assume AttachSocketName is the intended socket for attaching to character.
-        // If you want it per-weapon from DataAsset, add a new FName property there for it.
+
+        // BUGFIX: Use AttachSocketName for character attachment, not MuzzleFlashSocketName
+        // AttachSocketName is the socket on the character mesh where the weapon attaches
+        // MuzzleFlashSocketName is the socket on the weapon mesh where effects spawn
         AttachToComponent(CharacterMesh, AttachRules, AttachSocketName);
 
         SetActorRelativeLocation(FVector::ZeroVector);

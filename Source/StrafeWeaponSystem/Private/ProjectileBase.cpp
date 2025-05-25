@@ -1,5 +1,6 @@
 #include "ProjectileBase.h"
 #include "BaseWeapon.h"
+#include "WeaponDataAsset.h"
 #include "Components/SphereComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "GameFramework/DamageType.h"
@@ -13,6 +14,8 @@
 #include "Engine/EngineTypes.h"
 #include "TimerManager.h"
 #include "CollisionQueryParams.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemBlueprintLibrary.h"
 
 AProjectileBase::AProjectileBase()
 {
@@ -68,10 +71,17 @@ void AProjectileBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
     DOREPLIFETIME(AProjectileBase, OwningWeapon);
 }
 
-void AProjectileBase::InitializeProjectile(AController* NewOwner, ABaseWeapon* Weapon)
+void AProjectileBase::InitializeProjectile(AController* NewOwner, ABaseWeapon* Weapon, const UWeaponDataAsset* InWeaponData)
 {
     ProjectileOwner = NewOwner;
     OwningWeapon = Weapon;
+    OwningWeaponData = InWeaponData;
+
+    // Register with weapon
+    if (OwningWeapon)
+    {
+        OwningWeapon->RegisterProjectile(this);
+    }
 
     // Ignore collision with owner
     if (AActor* OwnerActor = NewOwner ? NewOwner->GetPawn() : nullptr)
@@ -105,9 +115,23 @@ void AProjectileBase::Detonate()
     }
 
     FVector ExplosionLocation = GetActorLocation();
-
     ApplyExplosionDamageAndImpulse(ExplosionLocation);
-    MulticastExplosionEffects(ExplosionLocation);
+
+    // Execute explosion gameplay cue instead of multicast
+    if (OwningWeaponData && OwningWeaponData->ExplosionEffectCueTag.IsValid())
+    {
+        FGameplayCueParameters CueParams;
+        CueParams.Location = ExplosionLocation;
+        CueParams.SourceObject = this;
+
+        if (ProjectileOwner && ProjectileOwner->GetPawn())
+        {
+            if (UAbilitySystemComponent* OwnerASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(ProjectileOwner->GetPawn()))
+            {
+                OwnerASC->ExecuteGameplayCue(OwningWeaponData->ExplosionEffectCueTag, CueParams);
+            }
+        }
+    }
 
     if (OwningWeapon)
     {

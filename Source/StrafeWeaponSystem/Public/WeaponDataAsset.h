@@ -60,6 +60,12 @@ struct FWeaponStats
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
     int32 MaxActiveProjectiles = 0; // 0 = unlimited. This might be checked by the ability or a separate system.
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Sticky")
+    bool bCanStickToCharacters = true;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Sticky")
+    float StickyAttachmentOffset = 2.0f;
 };
 
 UCLASS()
@@ -161,4 +167,14 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|Attributes", meta = (DisplayName = "Default Max Ammo Value"))
     float DefaultMaxAmmo = 20.f;
+
+    // Gameplay Cue tags
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|Effects")
+    FGameplayTag MuzzleFlashCueTag;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|Effects")
+    FGameplayTag ExplosionEffectCueTag;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|Effects")
+    FGameplayTag ImpactEffectCueTag; // For future hitscan weapons
 };
