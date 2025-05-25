@@ -4,6 +4,8 @@
 #include "StickyGrenadeProjectile.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "WeaponDataAsset.h"
+#include "GameFramework/Character.h"
 
 AStickyGrenadeProjectile::AStickyGrenadeProjectile()
 {
@@ -30,17 +32,44 @@ void AStickyGrenadeProjectile::OnHit(UPrimitiveComponent* HitComp, AActor* Other
     if (!HasAuthority() || bIsStuck)
         return;
 
-    // Don't explode on impact for sticky grenades
-    bExplodeOnImpact = false;
+    // Check if we can stick to this actor
+    bool bShouldStick = true;
 
-    // Stick to surface
-    bIsStuck = true;
-    ProjectileMovement->StopMovementImmediately();
+    if (OwningWeaponData)
+    {
+        // Check if we hit a character and if we're allowed to stick to characters
+        if (Cast<ACharacter>(OtherActor) && !OwningWeaponData->WeaponStats.bCanStickToCharacters)
+        {
+            bShouldStick = false;
+        }
+    }
 
-    // Attach to hit component
-    AttachToComponent(OtherComp, FAttachmentTransformRules::KeepWorldTransform, Hit.BoneName);
+    if (bShouldStick)
+    {
+        // Don't explode on impact for sticky grenades
+        bExplodeOnImpact = false;
 
-    OnRep_IsStuck();
+        // Stick to surface
+        bIsStuck = true;
+        ProjectileMovement->StopMovementImmediately();
+
+        // Attach with offset if specified
+        FVector AttachOffset = FVector::ZeroVector;
+        if (OwningWeaponData && OwningWeaponData->WeaponStats.StickyAttachmentOffset > 0.0f)
+        {
+            AttachOffset = Hit.ImpactNormal * OwningWeaponData->WeaponStats.StickyAttachmentOffset;
+        }
+
+        SetActorLocation(GetActorLocation() + AttachOffset);
+        AttachToComponent(OtherComp, FAttachmentTransformRules::KeepWorldTransform, Hit.BoneName);
+
+        OnRep_IsStuck();
+    }
+    else
+    {
+        // Bounce off if we can't stick
+        ProjectileMovement->Velocity = ProjectileMovement->Velocity.MirrorByVector(Hit.ImpactNormal) * 0.6f;
+    }
 }
 
 void AStickyGrenadeProjectile::OnRep_IsStuck()

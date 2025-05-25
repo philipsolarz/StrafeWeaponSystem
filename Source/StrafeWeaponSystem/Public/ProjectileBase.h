@@ -73,6 +73,9 @@ protected:
     UPROPERTY(Replicated)
     ABaseWeapon* OwningWeapon;
 
+    UPROPERTY()
+    TObjectPtr<const UWeaponDataAsset> OwningWeaponData;
+
     FTimerHandle LifetimeTimer;
 
 public:
@@ -80,7 +83,7 @@ public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
     UFUNCTION(BlueprintCallable, Category = "Projectile")
-    void InitializeProjectile(AController* NewOwner, ABaseWeapon* Weapon);
+    void InitializeProjectile(AController* NewOwner, ABaseWeapon* Weapon, const UWeaponDataAsset* InWeaponData);
 
     UFUNCTION(BlueprintCallable, Category = "Projectile")
     virtual void Detonate();

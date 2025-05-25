@@ -73,117 +73,102 @@ bool UGA_WeaponFire::CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
 
 void UGA_WeaponFire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
 {
-	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+    Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
+    if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
+    {
+        EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+        return;
+    }
 
-	AStrafeCharacter* Character = GetStrafeCharacterFromActorInfo();
-	ABaseWeapon* Weapon = GetEquippedWeaponFromActorInfo();
+    AStrafeCharacter* Character = GetStrafeCharacterFromActorInfo();
+    ABaseWeapon* Weapon = GetEquippedWeaponFromActorInfo();
 
-	// Accessing PrimaryProjectileClass via WeaponStats
-	if (!Character || !Weapon || !Weapon->GetWeaponData() || !Weapon->GetWeaponData()->WeaponStats.PrimaryProjectileClass) // <<<<<<< CORRECTED ACCESS
-	{
-		UE_LOG(LogTemp, Error, TEXT("UGA_WeaponFire::ActivateAbility: Invalid Character, Weapon, WeaponData, or PrimaryProjectileClass."));
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
+    if (!Character || !Weapon || !Weapon->GetWeaponData() || !Weapon->GetWeaponData()->WeaponStats.PrimaryProjectileClass)
+    {
+        UE_LOG(LogTemp, Error, TEXT("UGA_WeaponFire::ActivateAbility: Invalid Character, Weapon, WeaponData, or PrimaryProjectileClass."));
+        EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+        return;
+    }
 
-	const UWeaponDataAsset* LocalWeaponData = Weapon->GetWeaponData();
+    const UWeaponDataAsset* LocalWeaponData = Weapon->GetWeaponData();
 
-	// Get Muzzle Location & Rotation
-	FVector MuzzleLocation = Weapon->GetActorLocation() + Weapon->GetActorForwardVector() * 100.0f; // Default offset
-	FRotator MuzzleRotation = Weapon->GetActorRotation();
-	USkeletalMeshComponent* WeaponMesh = Weapon->GetWeaponMeshComponent();
+    // Get Muzzle Location & Rotation
+    FVector MuzzleLocation = Weapon->GetActorLocation() + Weapon->GetActorForwardVector() * 100.0f;
+    FRotator MuzzleRotation = Weapon->GetActorRotation();
+    USkeletalMeshComponent* WeaponMesh = Weapon->GetWeaponMeshComponent();
 
+    if (WeaponMesh && LocalWeaponData && WeaponMesh->DoesSocketExist(LocalWeaponData->MuzzleFlashSocketName))
+    {
+        MuzzleLocation = WeaponMesh->GetSocketLocation(LocalWeaponData->MuzzleFlashSocketName);
+        MuzzleRotation = WeaponMesh->GetSocketRotation(LocalWeaponData->MuzzleFlashSocketName);
+    }
 
-	if (WeaponMesh && LocalWeaponData && WeaponMesh->DoesSocketExist(LocalWeaponData->MuzzleFlashSocketName))
-	{
-		MuzzleLocation = WeaponMesh->GetSocketLocation(LocalWeaponData->MuzzleFlashSocketName);
-		MuzzleRotation = WeaponMesh->GetSocketRotation(LocalWeaponData->MuzzleFlashSocketName);
-	}
+    // Use character's aim direction
+    if (AController* Controller = Character->GetController())
+    {
+        MuzzleRotation = Controller->GetControlRotation();
 
-	// Use character's aim direction
-	if (AController* Controller = Character->GetController())
-	{
-		MuzzleRotation = Controller->GetControlRotation();
+        FVector CameraLocation;
+        FRotator CameraRotation;
+        Controller->GetPlayerViewPoint(CameraLocation, CameraRotation);
 
-		FVector CameraLocation;
-		FRotator CameraRotation; // Not strictly needed for this trace but good to get
-		Controller->GetPlayerViewPoint(CameraLocation, CameraRotation);
+        FVector AimDirection = MuzzleRotation.Vector();
+        FVector TraceStart = CameraLocation;
+        FVector TraceEnd = TraceStart + (AimDirection * 10000.0f);
 
-		FVector AimDirection = MuzzleRotation.Vector();
-		FVector TraceStart = CameraLocation;
-		FVector TraceEnd = TraceStart + (AimDirection * 10000.0f); // 100km trace
+        FHitResult HitResult;
+        FCollisionQueryParams QueryParams;
+        QueryParams.AddIgnoredActor(Weapon);
+        QueryParams.AddIgnoredActor(Character);
 
-		FHitResult HitResult;
-		FCollisionQueryParams QueryParams;
-		QueryParams.AddIgnoredActor(Weapon);
-		QueryParams.AddIgnoredActor(Character);
+        bool bHit = GetWorld()->LineTraceSingleByChannel(
+            HitResult,
+            TraceStart,
+            TraceEnd,
+            ECC_Visibility,
+            QueryParams
+        );
 
-		bool bHit = GetWorld()->LineTraceSingleByChannel(
-			HitResult,
-			TraceStart,
-			TraceEnd,
-			ECC_Visibility, // Or a custom trace channel for projectiles
-			QueryParams
-		);
+        MuzzleLocation = TraceStart + AimDirection * 150.0f;
 
-		// Adjust projectile spawn location to be slightly in front of the camera, aiming towards the hit point or max range
-		MuzzleLocation = TraceStart + AimDirection * 150.0f; // Spawn 150 units in front of camera
-
-		if (bHit && HitResult.GetActor() != Character && HitResult.GetActor() != Weapon) // Ensure we don't aim at self
-		{
-			MuzzleRotation = (HitResult.ImpactPoint - MuzzleLocation).Rotation();
-		}
-		else // No hit or hit self, aim straight from muzzle
-		{
-			// MuzzleRotation is already Controller->GetControlRotation()
-		}
+        if (bHit && HitResult.GetActor() != Character && HitResult.GetActor() != Weapon)
+        {
+            MuzzleRotation = (HitResult.ImpactPoint - MuzzleLocation).Rotation();
+        }
 
 #if WITH_EDITOR
-		if (GetWorld()->GetNetMode() != NM_DedicatedServer) // Only draw if not a dedicated server
-		{
-			DrawDebugLine(GetWorld(), MuzzleLocation, MuzzleLocation + MuzzleRotation.Vector() * 1000.0f, FColor::Green, false, 1.0f, 0, 1.0f);
-			if (bHit) DrawDebugSphere(GetWorld(), HitResult.ImpactPoint, 15.f, 12, FColor::Red, false, 1.f, 0, 1.f);
-		}
+        if (GetWorld()->GetNetMode() != NM_DedicatedServer)
+        {
+            DrawDebugLine(GetWorld(), MuzzleLocation, MuzzleLocation + MuzzleRotation.Vector() * 1000.0f, FColor::Green, false, 1.0f, 0, 1.0f);
+            if (bHit) DrawDebugSphere(GetWorld(), HitResult.ImpactPoint, 15.f, 12, FColor::Red, false, 1.f, 0, 1.f);
+        }
 #endif
-	}
+    }
 
-	// Spawn Projectile (can be a BlueprintNativeEvent if you want BP to override)
-	SpawnProjectile(Weapon, MuzzleLocation, MuzzleRotation);
+    // Spawn Projectile
+    SpawnProjectile(Weapon, MuzzleLocation, MuzzleRotation);
 
+    // Execute Muzzle Flash Gameplay Cue
+    if (LocalWeaponData->MuzzleFlashCueTag.IsValid() && ActorInfo->AbilitySystemComponent.IsValid())
+    {
+        FGameplayCueParameters CueParams;
+        CueParams.Location = MuzzleLocation;
+        CueParams.Normal = MuzzleRotation.Vector();
+        CueParams.SourceObject = Weapon;
 
-	// Play Effects (Muzzle Flash, Sound) - Consider moving to GameplayCues
-	if (LocalWeaponData->MuzzleFlashEffect && WeaponMesh && WeaponMesh->DoesSocketExist(LocalWeaponData->MuzzleFlashSocketName))
-	{
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			GetWorld(),
-			LocalWeaponData->MuzzleFlashEffect,
-			WeaponMesh->GetSocketLocation(LocalWeaponData->MuzzleFlashSocketName),
-			WeaponMesh->GetSocketRotation(LocalWeaponData->MuzzleFlashSocketName)
-		);
-	}
+        // Store the attachment info in the effect context
+        FGameplayEffectContextHandle ContextHandle = ActorInfo->AbilitySystemComponent->MakeEffectContext();
+        ContextHandle.AddSourceObject(Weapon);
+        CueParams.EffectContext = ContextHandle;
 
-	if (LocalWeaponData->FireSound)
-	{
-		FVector SoundLocation = WeaponMesh && WeaponMesh->DoesSocketExist(LocalWeaponData->FireSoundSocketName) ?
-			WeaponMesh->GetSocketLocation(LocalWeaponData->FireSoundSocketName) :
-			Weapon->GetActorLocation();
-		UGameplayStatics::PlaySoundAtLocation(GetWorld(), LocalWeaponData->FireSound, SoundLocation);
-	}
+        ActorInfo->AbilitySystemComponent->ExecuteGameplayCue(LocalWeaponData->MuzzleFlashCueTag, CueParams);
+    }
 
-	// Trigger Blueprint event for additional effects
-	K2_OnWeaponFired();
+    // Trigger Blueprint event for additional effects
+    K2_OnWeaponFired();
 
-	// The ability will end itself if it's an instant fire.
-	// For channeled abilities, you'd call EndAbility later.
-	bool bReplicateEndAbility = true;
-	bool bWasCancelled = false;
-	EndAbility(GetCurrentAbilitySpecHandle(), CurrentActorInfo, CurrentActivationInfo, bReplicateEndAbility, bWasCancelled);
+    EndAbility(GetCurrentAbilitySpecHandle(), CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
 void UGA_WeaponFire::CommitExecute(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo)
@@ -205,9 +190,9 @@ const UWeaponDataAsset* UGA_WeaponFire::GetWeaponData() const
 
 void UGA_WeaponFire::SpawnProjectile_Implementation(ABaseWeapon* Weapon, const FVector& SpawnLocation, const FRotator& SpawnRotation)
 {
-	// Accessing PrimaryProjectileClass via WeaponStats
-	if (!Weapon || !Weapon->GetWeaponData() || !Weapon->GetWeaponData()->WeaponStats.PrimaryProjectileClass) return; // <<<<<<< CORRECTED ACCESS
+	if (!Weapon || !Weapon->GetWeaponData() || !Weapon->GetWeaponData()->WeaponStats.PrimaryProjectileClass) return;
 
+	const UWeaponDataAsset* WeaponData = Weapon->GetWeaponData();
 	UWorld* World = GetWorld();
 	if (!World) return;
 
@@ -217,7 +202,7 @@ void UGA_WeaponFire::SpawnProjectile_Implementation(ABaseWeapon* Weapon, const F
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	AProjectileBase* Projectile = World->SpawnActor<AProjectileBase>(
-		Weapon->GetWeaponData()->WeaponStats.PrimaryProjectileClass, // <<<<<<< CORRECTED ACCESS
+		WeaponData->WeaponStats.PrimaryProjectileClass,
 		SpawnLocation,
 		SpawnRotation,
 		SpawnParams
@@ -225,13 +210,8 @@ void UGA_WeaponFire::SpawnProjectile_Implementation(ABaseWeapon* Weapon, const F
 
 	if (Projectile)
 	{
-		Projectile->InitializeProjectile(Cast<AController>(Weapon->GetOwner()->GetInstigatorController()), Weapon);
+		// Pass WeaponData to projectile
+		Projectile->InitializeProjectile(Cast<AController>(Weapon->GetOwner()->GetInstigatorController()), Weapon, WeaponData);
 		UE_LOG(LogTemp, Log, TEXT("UGA_WeaponFire: Projectile %s spawned by %s"), *Projectile->GetName(), *GetNameSafe(Weapon->GetOwner()));
-	}
-	else
-	{
-		// Log safely if PrimaryProjectileClass is somehow null even after the check
-		FString ClassName = Weapon->GetWeaponData()->WeaponStats.PrimaryProjectileClass ? Weapon->GetWeaponData()->WeaponStats.PrimaryProjectileClass->GetName() : TEXT("NULL"); // <<<<<<< ADDED NULL CHECK
-		UE_LOG(LogTemp, Error, TEXT("UGA_WeaponFire: Failed to spawn projectile of class %s"), *ClassName); // <<<<<<< CORRECTED LOG
 	}
 }
