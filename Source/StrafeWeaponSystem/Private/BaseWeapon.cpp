@@ -9,6 +9,9 @@
 #include "TimerManager.h"
 #include "Engine/Engine.h" // For debug messages
 #include "DrawDebugHelpers.h" // For debug visualization
+#include "Kismet/GameplayStatics.h" // For sound and effect spawning
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 
 ABaseWeapon::ABaseWeapon()
 {
@@ -136,15 +139,15 @@ void ABaseWeapon::PrimaryFireInternal()
         SpawnParams.Instigator = Cast<APawn>(GetOwner());
         SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-        // Get spawn transform with validation
+        // Get spawn transform with validation - UPDATED TO USE WEAPONDATA SOCKET NAME
         FVector MuzzleLocation = GetActorLocation() + GetActorForwardVector() * 100.0f; // Default offset
         FRotator MuzzleRotation = GetActorRotation();
 
-        // Try to use muzzle socket if available
-        if (WeaponMesh && WeaponMesh->DoesSocketExist("Muzzle"))
+        // Try to use muzzle socket if available - NOW USES WeaponData->MuzzleFlashSocketName
+        if (WeaponMesh && WeaponData && WeaponMesh->DoesSocketExist(WeaponData->MuzzleFlashSocketName))
         {
-            MuzzleLocation = WeaponMesh->GetSocketLocation("Muzzle");
-            MuzzleRotation = WeaponMesh->GetSocketRotation("Muzzle");
+            MuzzleLocation = WeaponMesh->GetSocketLocation(WeaponData->MuzzleFlashSocketName);
+            MuzzleRotation = WeaponMesh->GetSocketRotation(WeaponData->MuzzleFlashSocketName);
         }
 
         // Use character's aim direction
@@ -222,8 +225,43 @@ void ABaseWeapon::PrimaryFireInternal()
 
 void ABaseWeapon::MulticastFireEffects_Implementation()
 {
-    // This is called on all clients for visual/audio effects
-    // Blueprint can implement the actual VFX/SFX logic
+    // UPDATED: Now implements actual effect spawning using DataAsset socket properties
+    if (!WeaponData || !WeaponMesh)
+        return;
+
+    // Spawn muzzle flash effect at the correct socket
+    if (WeaponData->MuzzleFlashEffect && WeaponMesh->DoesSocketExist(WeaponData->MuzzleFlashSocketName))
+    {
+        FVector EffectLocation = WeaponMesh->GetSocketLocation(WeaponData->MuzzleFlashSocketName);
+        FRotator EffectRotation = WeaponMesh->GetSocketRotation(WeaponData->MuzzleFlashSocketName);
+
+        UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+            GetWorld(),
+            WeaponData->MuzzleFlashEffect,
+            EffectLocation,
+            EffectRotation
+        );
+    }
+
+    // Play fire sound at the correct socket
+    if (WeaponData->FireSound)
+    {
+        FVector SoundLocation = GetActorLocation(); // Default fallback
+
+        if (WeaponMesh->DoesSocketExist(WeaponData->FireSoundSocketName))
+        {
+            SoundLocation = WeaponMesh->GetSocketLocation(WeaponData->FireSoundSocketName);
+        }
+
+        UGameplayStatics::PlaySoundAtLocation(
+            GetWorld(),
+            WeaponData->FireSound,
+            SoundLocation
+        );
+    }
+
+    // Call Blueprint implementable event for additional custom effects
+    // This allows designers to add more effects in Blueprint while still having the C++ base functionality
 }
 
 bool ABaseWeapon::ConsumeAmmo(int32 Amount)
@@ -321,6 +359,16 @@ void ABaseWeapon::Equip(ACharacter* NewOwner)
     SetInstigator(NewOwner);
     bIsEquipped = true;
     SetActorHiddenInGame(false);
+
+    // UPDATED: Play equip sound from WeaponData if available
+    if (WeaponData && WeaponData->EquipSound)
+    {
+        UGameplayStatics::PlaySoundAtLocation(
+            GetWorld(),
+            WeaponData->EquipSound,
+            GetActorLocation()
+        );
+    }
 
     // Attach to character
     if (USkeletalMeshComponent* CharacterMesh = NewOwner->GetMesh())
