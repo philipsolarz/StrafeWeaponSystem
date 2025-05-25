@@ -18,7 +18,7 @@ public:
     AStickyGrenadeLauncher();
 
 protected:
-    virtual void SecondaryFireInternal() override;
+    //virtual void SecondaryFireInternal() override;
 
     void DetonateNextSticky();
     TArray<class AStickyGrenadeProjectile*> GetStuckProjectiles() const;

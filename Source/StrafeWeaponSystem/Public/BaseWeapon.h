@@ -8,23 +8,25 @@
 #include "GameplayTagContainer.h"
 #include "BaseWeapon.generated.h"
 
-USTRUCT()
-struct FStatModifierPair
-{
-    GENERATED_BODY()
-
-    UPROPERTY()
-    FGameplayTag Tag;
-
-    UPROPERTY()
-    float        Value = 0.f;
-};
+// USTRUCT() // FStatModifierPair is no longer needed with GAS handling most modifiers
+// struct FStatModifierPair
+// {
+//     GENERATED_BODY()
+//
+//     UPROPERTY()
+//     FGameplayTag Tag;
+//
+//     UPROPERTY()
+//     float        Value = 0.f;
+// };
 
 class AProjectileBase;
+class USkeletalMeshComponent;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnWeaponFired);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnOutOfAmmo);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAmmoChanged, int32, NewAmmoCount);
+
+//DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnWeaponFired); // Will be handled by GameplayCues or ability events
+//DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnOutOfAmmo);   // Handled by UI observing attributes or specific "OutOfAmmo" ability
+//DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAmmoChanged, int32, NewAmmoCount); // Handled by UI observing attributes
 
 UCLASS(Abstract)
 class STRAFEWEAPONSYSTEM_API ABaseWeapon : public AActor
@@ -41,143 +43,124 @@ protected:
 
     /** Socket on the character to attach to (editable per-weapon in BP or DataAsset) */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Attachment")
-    FName AttachSocketName = "WeaponSocket";
+    FName AttachSocketName = "WeaponSocket"; // Still relevant for visual attachment
 
-    /** Data that defines ammo, fire rate, etc. */
+    /** Data that defines ammo, fire rate, etc. Now primarily for ability configuration. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
     UWeaponDataAsset* WeaponData;
 
-    /** Current ammo in the clip (replicated) */
-    UPROPERTY(ReplicatedUsing = OnRep_CurrentAmmo, BlueprintReadOnly, Category = "Weapon")
-    int32 CurrentAmmo = 0;
+    // CurrentAmmo, MaxAmmo, StatModifierValues are removed. Handled by Character's AttributeSet & GameplayEffects.
 
     UPROPERTY(Replicated, BlueprintReadOnly, Category = "Weapon")
-    bool  bIsEquipped = false;
+    bool  bIsEquipped = false; // Still useful to know if the actor is visually equipped
 
-    FTimerHandle PrimaryFireTimer;
-    FTimerHandle SecondaryFireTimer;
+    // FTimerHandle PrimaryFireTimer; // Handled by Ability Cooldowns
+    // FTimerHandle SecondaryFireTimer; // Handled by Ability Cooldowns
 
-    /** Active projectiles fired by this weapon */
+    /** Active projectiles fired by this weapon - This might still be useful for some weapon logic (e.g. detonating existing projectiles)
+     * but the core firing mechanism won't rely on it as much.
+     */
     UPROPERTY(BlueprintReadOnly, Category = "Weapon")
     TArray<AProjectileBase*> ActiveProjectiles;
 
-    /** Map of stat modifiers applied to this weapon (e.g., from power-ups) */
-    //UPROPERTY(VisibleInstanceOnly, BlueprintReadWrite, Category = "Weapon|Modifiers", Replicated) Should maybe be replicated, keep in mind for eventual GAS refactoring.
-    UPROPERTY(VisibleInstanceOnly, BlueprintReadWrite, Category = "Weapon|Modifiers", Replicated)
-    TMap<FGameplayTag, float> StatModifierValues;
 
 public:
     /* ---------- core Engine overrides ---------- */
     virtual void BeginPlay() override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-    /* ---------- public weapon interface ---------- */
-    UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void StartPrimaryFire();
-    UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void StopPrimaryFire();
-    UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void StartSecondaryFire();
-    UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void StopSecondaryFire();
+    // Firing methods are removed. Will be handled by Gameplay Abilities.
+    // UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void StartPrimaryFire();
+    // UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void StopPrimaryFire();
+    // UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void StartSecondaryFire();
+    // UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void StopSecondaryFire();
+    //
+    // UFUNCTION(Server, Reliable) void ServerStartPrimaryFire();
+    // UFUNCTION(Server, Reliable) void ServerStopPrimaryFire();
+    // UFUNCTION(Server, Reliable) void ServerStartSecondaryFire();
+    // UFUNCTION(Server, Reliable) void ServerStopSecondaryFire();
 
-    UFUNCTION(Server, Reliable) void ServerStartPrimaryFire();
-    UFUNCTION(Server, Reliable) void ServerStopPrimaryFire();
-    UFUNCTION(Server, Reliable) void ServerStartSecondaryFire();
-    UFUNCTION(Server, Reliable) void ServerStopSecondaryFire();
+    /* ---------- ammo - These are removed. Ammo is in Character's AttributeSet ---------- */
+    // UFUNCTION(BlueprintCallable, Category = "Weapon") void AddAmmo(int32 Amount);
+    // UFUNCTION(BlueprintCallable, Category = "Weapon") bool ConsumeAmmo(int32 Amount = 1);
+    // UFUNCTION(BlueprintPure, Category = "Weapon") int32 GetCurrentAmmo() const { return CurrentAmmo; }
 
-    /* ---------- ammo ---------- */
-    UFUNCTION(BlueprintCallable, Category = "Weapon") void AddAmmo(int32 Amount);
-    UFUNCTION(BlueprintCallable, Category = "Weapon") bool ConsumeAmmo(int32 Amount = 1);
-    UFUNCTION(BlueprintPure, Category = "Weapon") int32 GetCurrentAmmo() const { return CurrentAmmo; }
-    UFUNCTION(BlueprintPure, Category = "Weapon") UWeaponDataAsset* GetWeaponData() const { return WeaponData; }
+    UFUNCTION(BlueprintPure, Category = "Weapon")
+    UWeaponDataAsset* GetWeaponData() const { return WeaponData; }
 
-    /* ---------- stat getters with modifier support ---------- */
-    UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
-    virtual float GetPrimaryFireRate() const;
+    UFUNCTION(BlueprintPure, Category = "Components")
+    USkeletalMeshComponent* GetWeaponMeshComponent() const { return WeaponMesh; }
 
-    UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
-    virtual float GetSecondaryFireRate() const;
 
-    UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
-    virtual int32 GetMaxAmmo() const;
+    /* ---------- stat getters with modifier support - These are mostly removed or refactored.
+                 Base stats come from WeaponData, modifiers are via GameplayEffects on Character.
+                 The ability itself will query these or have them as part of its definition.
+     ---------- */
+     // UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
+     // virtual float GetPrimaryFireRate() const; // Now comes from WeaponData for ability's cooldown GE
+     //
+     // UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
+     // virtual float GetSecondaryFireRate() const; // Now comes from WeaponData for ability's cooldown GE
+     //
+     // UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
+     // virtual int32 GetMaxAmmo() const; // From Character's AttributeSet
+     //
+     // UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
+     // virtual float GetWeaponSwitchTime() const; // Still relevant, could be in WeaponData
+     //
+     // UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
+     // virtual float GetDamageMultiplier() const; // From Character's AttributeSet or Projectile's GE
+     //
+     // UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
+     // virtual int32 GetMaxActiveProjectiles() const; // Could be checked by ability or a gameplay tag on weapon
 
-    UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
-    virtual float GetWeaponSwitchTime() const;
+     /* ---------- stat modifier management - Removed. Use GameplayEffects. ---------- */
+     // UFUNCTION(BlueprintCallable, Category = "Weapon|Modifiers", meta = (CallInEditor = "true"))
+     // virtual void AddStatModifier(FGameplayTag ModifierTag, float Value);
+     //
+     // UFUNCTION(BlueprintCallable, Category = "Weapon|Modifiers", meta = (CallInEditor = "true"))
+     // virtual void RemoveStatModifier(FGameplayTag ModifierTag);
+     //
+     // UFUNCTION(BlueprintCallable, Category = "Weapon|Modifiers", meta = (CallInEditor = "true"))
+     // virtual void ClearAllStatModifiers();
+     //
+     // UFUNCTION(BlueprintPure, Category = "Weapon|Modifiers")
+     // virtual float GetStatModifierValue(FGameplayTag ModifierTag) const;
+     //
+     // UFUNCTION(BlueprintPure, Category = "Weapon|Modifiers")
+     // virtual bool HasStatModifier(FGameplayTag ModifierTag) const;
 
-    UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
-    virtual float GetDamageMultiplier() const;
-
-    UFUNCTION(BlueprintPure, Category = "Weapon|Stats")
-    virtual int32 GetMaxActiveProjectiles() const;
-
-    /* ---------- stat modifier management ---------- */
-    UFUNCTION(BlueprintCallable, Category = "Weapon|Modifiers", meta = (CallInEditor = "true"))
-    virtual void AddStatModifier(FGameplayTag ModifierTag, float Value);
-
-    UFUNCTION(BlueprintCallable, Category = "Weapon|Modifiers", meta = (CallInEditor = "true"))
-    virtual void RemoveStatModifier(FGameplayTag ModifierTag);
-
-    UFUNCTION(BlueprintCallable, Category = "Weapon|Modifiers", meta = (CallInEditor = "true"))
-    virtual void ClearAllStatModifiers();
-
-    UFUNCTION(BlueprintPure, Category = "Weapon|Modifiers")
-    virtual float GetStatModifierValue(FGameplayTag ModifierTag) const;
-
-    UFUNCTION(BlueprintPure, Category = "Weapon|Modifiers")
-    virtual bool HasStatModifier(FGameplayTag ModifierTag) const;
-
-    /* ---------- equipping ---------- */
+     /* ---------- equipping ---------- */
     UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void Equip(ACharacter* NewOwner);
     UFUNCTION(BlueprintCallable, Category = "Weapon") virtual void Unequip();
 
-    /* ---------- gameplay events ---------- */
-    UPROPERTY(BlueprintAssignable, Category = "Weapon") FOnWeaponFired  OnWeaponFired;
-    UPROPERTY(BlueprintAssignable, Category = "Weapon") FOnOutOfAmmo    OnOutOfAmmo;
-    UPROPERTY(BlueprintAssignable, Category = "Weapon") FOnAmmoChanged  OnAmmoChanged;
+    bool IsEquipped() const { return bIsEquipped; }
+
+
+    /* ---------- gameplay events - Removed. Use GameplayCues or Ability events. ---------- */
+    // UPROPERTY(BlueprintAssignable, Category = "Weapon") FOnWeaponFired  OnWeaponFired;
+    // UPROPERTY(BlueprintAssignable, Category = "Weapon") FOnOutOfAmmo    OnOutOfAmmo;
+    // UPROPERTY(BlueprintAssignable, Category = "Weapon") FOnAmmoChanged  OnAmmoChanged;
 
 protected:
-    /* ---------- internal helpers ---------- */
-    virtual void PrimaryFireInternal();
-    virtual void SecondaryFireInternal();
+    /* ---------- internal helpers - Removed or refactored. ---------- */
+    // virtual void PrimaryFireInternal();
+    // virtual void SecondaryFireInternal();
+    //
+    // UFUNCTION(BlueprintImplementableEvent, Category = "Weapon") void OnPrimaryFire();
+    // UFUNCTION(BlueprintImplementableEvent, Category = "Weapon") void OnSecondaryFire();
+    //
+    // UFUNCTION(NetMulticast, Unreliable) void MulticastFireEffects();
+    // UFUNCTION() void OnRep_CurrentAmmo();
 
-    UFUNCTION(BlueprintImplementableEvent, Category = "Weapon") void OnPrimaryFire();
-    UFUNCTION(BlueprintImplementableEvent, Category = "Weapon") void OnSecondaryFire();
-
-    UFUNCTION(NetMulticast, Unreliable) void MulticastFireEffects();
-    UFUNCTION() void OnRep_CurrentAmmo();
-
-    /* projectile bookkeeping */
+    /* projectile bookkeeping - Still potentially useful for some weapons (e.g. sticky launcher detonate all) */
+public: // Make public if other systems (like the ability itself) need to interact
     void RegisterProjectile(AProjectileBase* Projectile);
     void UnregisterProjectile(AProjectileBase* Projectile);
+protected:
     UFUNCTION() void OnProjectileDestroyed(AActor* DestroyedActor);
 
-private:
-    friend class AProjectileBase;
-};
 
-/*
- * BLUEPRINT IMPLEMENTATION GUIDE: Weapon Stat Modifiers
- *
- * 1. Setting up Gameplay Tags:
- *    - Go to Project Settings -> Project -> Gameplay Tags
- *    - Add tags for different modifiers, for example:
- *      - Weapon.Modifier.Damage.Multiplier (multiplicative damage boost)
- *      - Weapon.Modifier.FireRate.Multiplier (multiplicative fire rate boost)
- *      - Weapon.Modifier.MaxAmmo.Additive (additive max ammo increase)
- *      - Weapon.Modifier.ProjectileSpeed.Multiplier
- *
- * 2. Applying Modifiers from Blueprints (e.g., Power-up Pickup):
- *    - On overlap with player, get the player's current weapon
- *    - Call AddStatModifier with the appropriate tag and value
- *    - Example: AddStatModifier("Weapon.Modifier.Damage.Multiplier", 2.0) for double damage
- *
- * 3. Removing Modifiers (e.g., when power-up expires):
- *    - Call RemoveStatModifier with the same tag used when adding
- *    - Or use ClearAllStatModifiers to remove all modifiers at once
- *
- * 4. UI Integration:
- *    - UI widgets should call the getter functions (GetPrimaryFireRate, GetDamageMultiplier, etc.)
- *    - These functions automatically apply active modifiers to base stats
- *    - Bind UI updates to weapon events like OnAmmoChanged
- *
- * 5. Creating Custom Modifiers:
- *    - For weapon-specific modifiers, override the getter functions in child classes
- *    - Check for custom tags and apply special logic as needed
- */
+private:
+    friend class AProjectileBase; // Still useful for projectile to access OwningWeapon
+};

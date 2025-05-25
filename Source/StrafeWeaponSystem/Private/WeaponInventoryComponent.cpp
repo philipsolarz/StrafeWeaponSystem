@@ -1,9 +1,12 @@
 #include "WeaponInventoryComponent.h"
 #include "BaseWeapon.h"
-#include "GameFramework/Character.h"
+#include "WeaponDataAsset.h" // For accessing WeaponData on AddWeapon
+#include "StrafeCharacter.h" // To get AbilitySystemComponent
+#include "AbilitySystemComponent.h" // For applying GEs
+#include "GameplayEffectTypes.h" // For FGameplayEffectContextHandle
 #include "Net/UnrealNetwork.h"
 #include "Engine/ActorChannel.h"
-#include "Engine/Engine.h" // For debug messages
+#include "Engine/Engine.h" 
 
 UWeaponInventoryComponent::UWeaponInventoryComponent()
 {
@@ -15,27 +18,8 @@ void UWeaponInventoryComponent::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (GetOwner()->HasAuthority())
-    {
-        // Initialize ammo reserves
-        AmmoReserves.Add(FAmmoReserve(EAmmoType::Rockets, 0));
-        AmmoReserves.Add(FAmmoReserve(EAmmoType::StickyGrenades, 0));
-
-        // Add starting weapons
-        for (TSubclassOf<ABaseWeapon> WeaponClass : StartingWeapons)
-        {
-            if (WeaponClass)
-            {
-                AddWeapon(WeaponClass);
-            }
-        }
-
-        // Equip first weapon if available
-        if (WeaponInventory.Num() > 0 && WeaponInventory[0])
-        {
-            EquipWeapon(WeaponInventory[0]->GetClass());
-        }
-    }
+    // StartingWeapons are added by AStrafeCharacter now after ASC is initialized.
+    // If you want inventory to manage this independently, ensure ASC is valid on owner.
 }
 
 void UWeaponInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -44,7 +28,7 @@ void UWeaponInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 
     DOREPLIFETIME(UWeaponInventoryComponent, WeaponInventory);
     DOREPLIFETIME(UWeaponInventoryComponent, CurrentWeapon);
-    DOREPLIFETIME(UWeaponInventoryComponent, AmmoReserves);
+    // DOREPLIFETIME(UWeaponInventoryComponent, AmmoReserves); // Removed
 }
 
 bool UWeaponInventoryComponent::AddWeapon(TSubclassOf<ABaseWeapon> WeaponClass)
@@ -55,67 +39,119 @@ bool UWeaponInventoryComponent::AddWeapon(TSubclassOf<ABaseWeapon> WeaponClass)
         return false;
     }
 
-    if (!GetOwner()->HasAuthority())
+    AActor* OwnerActor = GetOwner();
+    if (!OwnerActor) return false;
+
+    if (!OwnerActor->HasAuthority())
     {
         ServerAddWeapon(WeaponClass);
-        return false;
+        // Client predicts success but actual add/ammo is server-authoritative
+        // For UI, it might be okay to assume success and wait for replication,
+        // or have a more complex prediction system.
+        return true;
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("AddWeapon called for: %s"), *WeaponClass->GetName());
+    UE_LOG(LogTemp, Warning, TEXT("Server AddWeapon called for: %s"), *WeaponClass->GetName());
 
     // Check if we already have this weapon type
     for (ABaseWeapon* Weapon : WeaponInventory)
     {
         if (Weapon && Weapon->IsA(WeaponClass))
         {
-            // Just add ammo to existing weapon
-            if (UWeaponDataAsset* WeaponData = Weapon->GetWeaponData())
+            // Weapon already owned. Ammo pickups should be separate items that apply a GE directly.
+            // If this AddWeapon call is from a "full weapon pickup" that also gives ammo:
+            AStrafeCharacter* Character = Cast<AStrafeCharacter>(OwnerActor);
+            UWeaponDataAsset* WeaponData = Weapon->GetWeaponData();
+            if (Character && Character->GetAbilitySystemComponent() && WeaponData && WeaponData->AmmoAttribute.IsValid())
             {
-                int32 AmmoToAdd = WeaponData->WeaponStats.AmmoPerPickup;
-                Weapon->AddAmmo(AmmoToAdd);
-                UE_LOG(LogTemp, Warning, TEXT("Weapon already owned, added %d ammo"), AmmoToAdd);
+                // This is a "weapon pickup that also acts as an ammo top-up".
+                // You'd have a GE specifically for "adding X ammo to Y attribute".
+                // For simplicity, let's assume a generic "add some ammo" effect or define one in WeaponData.
+                // Example: Create a GE like "GE_AddDefaultAmmo_Rocket"
+                // TSubclassOf<UGameplayEffect> AmmoTopUpEffect = WeaponData->PickupGrantAmmoEffect; // New field in UWeaponDataAsset
+                // if (AmmoTopUpEffect) {
+                //     FGameplayEffectContextHandle ContextHandle = Character->GetAbilitySystemComponent()->MakeEffectContext();
+                //     ContextHandle.AddSourceObject(this);
+                //     Character->GetAbilitySystemComponent()->ApplyGameplayEffectToSelf(AmmoTopUpEffect->GetDefaultObject(), 1.0f, ContextHandle);
+                //     UE_LOG(LogTemp, Log, TEXT("Weapon %s already owned, applied ammo top-up effect."), *WeaponClass->GetName());
+                // } else {
+                UE_LOG(LogTemp, Log, TEXT("Weapon %s already owned. No specific ammo top-up GE defined on pickup. Ammo handled by separate ammo pickups."), *WeaponClass->GetName());
+                // }
             }
-            return false;
+            return false; // Already have the weapon type
         }
     }
 
     // Spawn new weapon
     FActorSpawnParameters SpawnParams;
-    SpawnParams.Owner = GetOwner();
+    SpawnParams.Owner = OwnerActor;
     SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-    // Get spawn location away from world geometry
-    FVector SpawnLocation = GetOwner()->GetActorLocation() + FVector(0, 0, 100);
+    FVector SpawnLocation = OwnerActor->GetActorLocation() + FVector(0, 0, 100); // Away from ground
     FRotator SpawnRotation = FRotator::ZeroRotator;
 
     ABaseWeapon* NewWeapon = GetWorld()->SpawnActor<ABaseWeapon>(WeaponClass, SpawnLocation, SpawnRotation, SpawnParams);
     if (NewWeapon)
     {
         UE_LOG(LogTemp, Warning, TEXT("Successfully spawned weapon: %s"), *NewWeapon->GetName());
-
         WeaponInventory.Add(NewWeapon);
-        NewWeapon->SetOwner(GetOwner());
+        NewWeapon->SetOwner(OwnerActor);
+        NewWeapon->AttachToComponent(OwnerActor->GetRootComponent(), FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+        NewWeapon->SetActorHiddenInGame(true); // Hide until equipped
 
-        // Attach to owner
-        NewWeapon->AttachToComponent(GetOwner()->GetRootComponent(),
-            FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-        NewWeapon->SetActorHiddenInGame(true);
+        OnWeaponAdded.Broadcast(WeaponClass); // Or NewWeapon
+        OnRep_WeaponInventory(); // Force server-side update for rep notifies if any logic depends on it immediately
 
-        OnWeaponAdded.Broadcast(WeaponClass);
+        // Initialize ammo for the new weapon using its WeaponDataAsset settings
+        AStrafeCharacter* Character = Cast<AStrafeCharacter>(OwnerActor);
+        UWeaponDataAsset* WeaponData = NewWeapon->GetWeaponData();
+        UAbilitySystemComponent* ASC = Character ? Character->GetAbilitySystemComponent() : nullptr;
 
-        // Force replication update
-        if (GetOwner()->HasAuthority())
+        if (ASC && WeaponData && WeaponData->AmmoAttribute.IsValid() && WeaponData->MaxAmmoAttribute.IsValid())
         {
-            OnRep_WeaponInventory();
-        }
+            // Create a dynamic GameplayEffect to set initial and max ammo
+            UGameplayEffect* AmmoInitEffect = NewObject<UGameplayEffect>(GetTransientPackage(), FName(TEXT("AmmoInitEffect")));
+            AmmoInitEffect->DurationPolicy = EGameplayEffectDurationType::Instant;
 
+            // Modifier for Initial Ammo
+            int32 InitialAmmoModIndex = AmmoInitEffect->Modifiers.Num();
+            AmmoInitEffect->Modifiers.SetNum(InitialAmmoModIndex + 1);
+            FGameplayModifierInfo& ModInitialAmmo = AmmoInitEffect->Modifiers[InitialAmmoModIndex];
+            ModInitialAmmo.Attribute = WeaponData->AmmoAttribute;
+            ModInitialAmmo.ModifierOp = EGameplayModOp::Override; // Or Add if you want to add to existing
+            ModInitialAmmo.ModifierMagnitude = FScalableFloat(WeaponData->InitialAmmoCount);
+
+            // Modifier for Max Ammo
+            int32 MaxAmmoModIndex = AmmoInitEffect->Modifiers.Num();
+            AmmoInitEffect->Modifiers.SetNum(MaxAmmoModIndex + 1);
+            FGameplayModifierInfo& ModMaxAmmo = AmmoInitEffect->Modifiers[MaxAmmoModIndex];
+            ModMaxAmmo.Attribute = WeaponData->MaxAmmoAttribute;
+            ModMaxAmmo.ModifierOp = EGameplayModOp::Override;
+            ModMaxAmmo.ModifierMagnitude = FScalableFloat(WeaponData->DefaultMaxAmmo);
+
+            FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
+            ContextHandle.AddSourceObject(NewWeapon); // Source is the weapon itself
+            ASC->ApplyGameplayEffectToSelf(AmmoInitEffect, 1.0f, ContextHandle);
+
+            UE_LOG(LogTemp, Log, TEXT("Applied initial ammo (%f) and max ammo (%f) for %s via dynamic GE."), WeaponData->InitialAmmoCount, WeaponData->DefaultMaxAmmo, *WeaponData->AmmoAttribute.GetName());
+        }
+        else
+        {
+            if (!ASC)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("AddWeapon: Character or ASC is null. Cannot initialize ammo for %s."), *WeaponClass->GetName());
+            }
+            else if (!WeaponData) // Chained else if
+            {
+                UE_LOG(LogTemp, Warning, TEXT("AddWeapon: WeaponData is null for %s. Cannot initialize ammo."), *WeaponClass->GetName());
+            }
+            else if (!WeaponData->AmmoAttribute.IsValid() || !WeaponData->MaxAmmoAttribute.IsValid()) // Chained else if
+            {
+                UE_LOG(LogTemp, Log, TEXT("AddWeapon: %s does not use standard ammo attributes or they are not set in its WeaponDataAsset."), *WeaponClass->GetName());
+            }
+        }
         return true;
     }
-    else
-    {
-        UE_LOG(LogTemp, Error, TEXT("Failed to spawn weapon actor"));
-    }
-
+    UE_LOG(LogTemp, Error, TEXT("Failed to spawn weapon actor for %s"), *WeaponClass->GetName());
     return false;
 }
 
@@ -126,31 +162,29 @@ void UWeaponInventoryComponent::ServerAddWeapon_Implementation(TSubclassOf<ABase
 
 void UWeaponInventoryComponent::EquipWeapon(TSubclassOf<ABaseWeapon> WeaponClass)
 {
-    if (!GetOwner()->HasAuthority())
+    AActor* OwnerActor = GetOwner();
+    if (!OwnerActor || !OwnerActor->HasAuthority())
     {
-        ServerEquipWeapon(WeaponClass);
+        if (OwnerActor) ServerEquipWeapon(WeaponClass);
+        // Client might predict the switch visually, but ability granting is server-auth
         return;
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("EquipWeapon called for: %s"),
-        WeaponClass ? *WeaponClass->GetName() : TEXT("nullptr"));
+    UE_LOG(LogTemp, Warning, TEXT("Server EquipWeapon called for: %s"), WeaponClass ? *WeaponClass->GetName() : TEXT("nullptr"));
 
-    // Handle empty weapon class (unequip all)
-    if (!WeaponClass)
+    if (!WeaponClass) // Unequip all
     {
         if (CurrentWeapon)
         {
-            // CRITICAL: Stop firing before unequipping
-            CurrentWeapon->StopPrimaryFire();
-            CurrentWeapon->StopSecondaryFire();
+            // Character's OnWeaponEquipped(nullptr) will handle clearing abilities
             CurrentWeapon->Unequip();
-            CurrentWeapon = nullptr;
-            OnRep_CurrentWeapon();
         }
+        CurrentWeapon = nullptr;
+        OnRep_CurrentWeapon(); // Notify clients
+        OnWeaponEquipped.Broadcast(nullptr); // Notify local systems on server + character
         return;
     }
 
-    // Find the weapon in inventory
     ABaseWeapon* WeaponToEquip = nullptr;
     for (ABaseWeapon* Weapon : WeaponInventory)
     {
@@ -166,40 +200,35 @@ void UWeaponInventoryComponent::EquipWeapon(TSubclassOf<ABaseWeapon> WeaponClass
         UE_LOG(LogTemp, Error, TEXT("Weapon not found in inventory: %s"), *WeaponClass->GetName());
         return;
     }
+    if (WeaponToEquip == CurrentWeapon && WeaponToEquip->IsEquipped()) // Already equipped
+    {
+        UE_LOG(LogTemp, Log, TEXT("Weapon %s already equipped."), *WeaponClass->GetName());
+        return;
+    }
 
-    // Check if we're already switching
     if (GetWorld()->GetTimerManager().IsTimerActive(WeaponSwitchTimer))
     {
-        UE_LOG(LogTemp, Warning, TEXT("Already switching weapons, ignoring request"));
+        UE_LOG(LogTemp, Warning, TEXT("Already switching weapons, ignoring request for %s"), *WeaponClass->GetName());
         return;
     }
 
     PendingWeapon = WeaponToEquip;
+    float SwitchTime = 0.5f; // Default
+    if (CurrentWeapon && CurrentWeapon->GetWeaponData()) SwitchTime = CurrentWeapon->GetWeaponData()->WeaponStats.WeaponSwitchTime;
+    else if (PendingWeapon && PendingWeapon->GetWeaponData()) SwitchTime = PendingWeapon->GetWeaponData()->WeaponStats.WeaponSwitchTime; // Switch time for weapon being equipped
 
-    // Calculate switch time using the modifier-aware getter
-    float SwitchTime = 0.5f; // Default fallback
+    UE_LOG(LogTemp, Warning, TEXT("Starting weapon switch to %s, time: %f"), *PendingWeapon->GetName(), SwitchTime);
+
+    GetWorld()->GetTimerManager().SetTimer(WeaponSwitchTimer, this, &UWeaponInventoryComponent::FinishWeaponSwitch, SwitchTime, false);
+
     if (CurrentWeapon)
     {
-        SwitchTime = CurrentWeapon->GetWeaponSwitchTime(); // Now uses modifier-aware getter
-    }
-
-    UE_LOG(LogTemp, Warning, TEXT("Starting weapon switch, time: %f"), SwitchTime);
-
-    // Start switch timer
-    GetWorld()->GetTimerManager().SetTimer(
-        WeaponSwitchTimer,
-        this,
-        &UWeaponInventoryComponent::FinishWeaponSwitch,
-        SwitchTime,
-        false
-    );
-
-    // CRITICAL: Stop firing and then unequip current weapon
-    if (CurrentWeapon)
-    {
-        CurrentWeapon->StopPrimaryFire();
-        CurrentWeapon->StopSecondaryFire();
+        // Character's OnWeaponEquipped(nullptr) during the switch process will clear old abilities.
+        // For now, just unequip visually. The new abilities are granted on FinishWeaponSwitch.
         CurrentWeapon->Unequip();
+        // Let character know current weapon is going away before new one is ready
+        AStrafeCharacter* Character = Cast<AStrafeCharacter>(GetOwner());
+        if (Character) Character->OnWeaponEquipped(nullptr);
     }
 }
 
@@ -213,59 +242,107 @@ void UWeaponInventoryComponent::FinishWeaponSwitch()
     if (PendingWeapon)
     {
         UE_LOG(LogTemp, Warning, TEXT("Finishing weapon switch to: %s"), *PendingWeapon->GetName());
-
+        if (CurrentWeapon && CurrentWeapon != PendingWeapon) // Ensure old weapon is unequipped if it wasn't part of initial timer call
+        {
+            // This might be redundant if EquipWeapon(nullptr) was called before timer
+            // CurrentWeapon->Unequip();
+        }
         CurrentWeapon = PendingWeapon;
         PendingWeapon = nullptr;
 
-        if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
+        ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+        if (OwnerCharacter && CurrentWeapon)
         {
-            CurrentWeapon->Equip(Character);
+            CurrentWeapon->Equip(OwnerCharacter);
         }
 
-        MulticastEquipWeapon(CurrentWeapon);
-    }
-    else
-    {
-        UE_LOG(LogTemp, Error, TEXT("FinishWeaponSwitch called but PendingWeapon is null"));
+        OnRep_CurrentWeapon(); // Replicate the new CurrentWeapon
+        OnWeaponEquipped.Broadcast(CurrentWeapon); // Notify server-side systems and Character
+
+        // MulticastEquipWeaponVisuals(CurrentWeapon); // This is now implicitly handled by OnRep_CurrentWeapon for visuals
+                                                  // and OnWeaponEquipped on Character for abilities
     }
 }
 
-void UWeaponInventoryComponent::MulticastEquipWeapon_Implementation(ABaseWeapon* NewWeapon)
+void UWeaponInventoryComponent::MulticastEquipWeaponVisuals_Implementation(ABaseWeapon* NewWeapon)
 {
-    OnWeaponEquipped.Broadcast(NewWeapon);
+    // This function is less critical now.
+    // OnRep_CurrentWeapon handles replicating the CurrentWeapon pointer.
+    // AStrafeCharacter::OnWeaponEquipped (called due to OnWeaponEquipped delegate or OnRep_CurrentWeapon)
+    // should handle visual attachment if needed on clients, or the ABaseWeapon::Equip handles it.
+    // For purely visual things that clients need to do immediately that replication doesn't cover, use this.
+    // But ability granting is server-authoritative.
+
+    // If CurrentWeapon was set locally on client due to prediction, this call could confirm/correct.
+    // However, standard GAS relies on server granting abilities.
+    if (GetOwnerRole() < ROLE_Authority) // Only clients execute this
+    {
+        // ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+        // if (OwnerCharacter && NewWeapon) {
+        //    NewWeapon->Equip(OwnerCharacter); // Ensure visual equip on client
+        // }
+        // if (CurrentWeapon && CurrentWeapon != NewWeapon) {
+        //    CurrentWeapon->Unequip();
+        // }
+        // CurrentWeapon = NewWeapon; // Update local client's notion
+    }
+    // OnWeaponEquipped.Broadcast(NewWeapon); // This was already broadcast on server
 }
+
 
 void UWeaponInventoryComponent::OnRep_CurrentWeapon()
 {
-    OnWeaponEquipped.Broadcast(CurrentWeapon);
+    // This is called on clients when CurrentWeapon changes.
+    // The AStrafeCharacter should observe its inventory's OnWeaponEquipped event,
+    // or react to this OnRep_CurrentWeapon if direct coupling is preferred.
+    // For simplicity, let's assume AStrafeCharacter's OnWeaponEquipped delegate handles it.
+    OnWeaponEquipped.Broadcast(CurrentWeapon); // Notify local client systems
+
+    // If there's any purely visual unequip/equip logic that needs to happen on clients
+    // when the replicated CurrentWeapon changes, it can be done here.
+    // For example, if a previously equipped weapon (not the one before CurrentWeapon, but one before that)
+    // wasn't properly hidden due to prediction, this is a chance to correct it.
+    // However, BaseWeapon::Equip and Unequip should handle visibility.
+    for (ABaseWeapon* Weapon : WeaponInventory)
+    {
+        if (Weapon && Weapon != CurrentWeapon && Weapon->IsEquipped())
+        {
+            Weapon->Unequip(); // Ensure only current weapon is visually equipped
+        }
+    }
+    if (CurrentWeapon && !CurrentWeapon->IsEquipped())
+    {
+        ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+        if (OwnerCharacter) CurrentWeapon->Equip(OwnerCharacter);
+    }
 }
+
+void UWeaponInventoryComponent::OnRep_WeaponInventory()
+{
+    UE_LOG(LogTemp, Warning, TEXT("Client: Weapon inventory replicated, count: %d"), WeaponInventory.Num());
+    // Potentially update UI or other client-side systems that care about the raw list.
+}
+
+// OnRep_AmmoReserves and ammo functions are removed.
 
 void UWeaponInventoryComponent::NextWeapon()
 {
-    if (WeaponInventory.Num() <= 1)
-        return;
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return; // Should be called on server
+    if (WeaponInventory.Num() <= 1) return;
 
-    int32 CurrentIndex = WeaponInventory.IndexOfByKey(CurrentWeapon);
-    if (CurrentIndex == INDEX_NONE)
-        CurrentIndex = 0;
-
-    int32 NextIndex = (CurrentIndex + 1) % WeaponInventory.Num();
+    int32 CurrentIndex = CurrentWeapon ? WeaponInventory.IndexOfByKey(CurrentWeapon) : -1;
+    int32 NextIndex = (CurrentIndex == INDEX_NONE) ? 0 : (CurrentIndex + 1) % WeaponInventory.Num();
 
     EquipWeaponByIndex(NextIndex);
 }
 
 void UWeaponInventoryComponent::PreviousWeapon()
 {
-    if (WeaponInventory.Num() <= 1)
-        return;
+    if (!GetOwner() || !GetOwner()->HasAuthority()) return; // Should be called on server
+    if (WeaponInventory.Num() <= 1) return;
 
-    int32 CurrentIndex = WeaponInventory.IndexOfByKey(CurrentWeapon);
-    if (CurrentIndex == INDEX_NONE)
-        CurrentIndex = 0;
-
-    int32 PrevIndex = CurrentIndex - 1;
-    if (PrevIndex < 0)
-        PrevIndex = WeaponInventory.Num() - 1;
+    int32 CurrentIndex = CurrentWeapon ? WeaponInventory.IndexOfByKey(CurrentWeapon) : -1;
+    int32 PrevIndex = (CurrentIndex == INDEX_NONE) ? 0 : (CurrentIndex - 1 + WeaponInventory.Num()) % WeaponInventory.Num();
 
     EquipWeaponByIndex(PrevIndex);
 }
@@ -288,43 +365,4 @@ bool UWeaponInventoryComponent::HasWeapon(TSubclassOf<ABaseWeapon> WeaponClass) 
         }
     }
     return false;
-}
-
-void UWeaponInventoryComponent::OnRep_WeaponInventory()
-{
-    // Notify UI or other systems about inventory changes
-    UE_LOG(LogTemp, Warning, TEXT("Weapon inventory updated, count: %d"), WeaponInventory.Num());
-}
-
-void UWeaponInventoryComponent::AddAmmo(EAmmoType AmmoType, int32 Amount)
-{
-    int32 Index = FindAmmoReserveIndex(AmmoType);
-    if (Index != INDEX_NONE)
-    {
-        AmmoReserves[Index].Count += Amount;
-        OnRep_AmmoReserves(); // Trigger update on server
-    }
-}
-
-int32 UWeaponInventoryComponent::GetAmmoCount(EAmmoType AmmoType) const
-{
-    int32 Index = FindAmmoReserveIndex(AmmoType);
-    return (Index != INDEX_NONE) ? AmmoReserves[Index].Count : 0;
-}
-
-int32 UWeaponInventoryComponent::FindAmmoReserveIndex(EAmmoType AmmoType) const
-{
-    for (int32 i = 0; i < AmmoReserves.Num(); i++)
-    {
-        if (AmmoReserves[i].AmmoType == AmmoType)
-        {
-            return i;
-        }
-    }
-    return INDEX_NONE;
-}
-
-void UWeaponInventoryComponent::OnRep_AmmoReserves()
-{
-    // Notify UI or other systems about ammo changes
 }
