@@ -12,6 +12,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "GameFramework/PlayerController.h"
+#include "GameplayEffect.h" // Required for FGameplayEffectQuery
 
 UGA_ChargedShotgun_SecondaryFire::UGA_ChargedShotgun_SecondaryFire()
 {
@@ -23,13 +24,15 @@ UGA_ChargedShotgun_SecondaryFire::UGA_ChargedShotgun_SecondaryFire()
     bInputWasReleasedDuringCharge = false;
 
     // Define default tags - these can be overridden or confirmed by tags from WeaponDataAsset
-    ChargeSecondaryInProgressTag = FGameplayTag::RequestGameplayTag(FName("State.Weapon.Charging.Secondary"));
-    OverchargedStateTag = FGameplayTag::RequestGameplayTag(FName("State.Weapon.Overcharged"));
-    WeaponLockoutTag = FGameplayTag::RequestGameplayTag(FName("State.Weapon.Lockout"));
+    ChargeSecondaryInProgressTag = FGameplayTag::RequestGameplayTag(FName("State.Weapon.ChargedShotgun.Charging.SecondaryFire"));
+    OverchargedStateTag = FGameplayTag::RequestGameplayTag(FName("State.Weapon.ChargedShotgun.Overcharged.SecondaryFire"));
+    WeaponLockoutTag = FGameplayTag::RequestGameplayTag(FName("State.Weapon.ChargedShotgun.Lockout"));
 
     // Add relevant tags to the ability itself
-    AbilityTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.SecondaryFire")));
-    AbilityTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.Shotgun.Secondary")));
+    FGameplayTagContainer UpdatedTags = GetAssetTags();
+    UpdatedTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.SecondaryFire")));
+    UpdatedTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.ChargedShotgun.SecondaryFire")));
+    SetAssetTags(UpdatedTags);
 }
 
 bool UGA_ChargedShotgun_SecondaryFire::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, OUT FGameplayTagContainer* OptionalRelevantTags) const
@@ -185,7 +188,7 @@ void UGA_ChargedShotgun_SecondaryFire::StartSecondaryCharge()
         FGameplayCueParameters CueParams;
         CueParams.Instigator = GetAvatarActorFromActorInfo();
         CueParams.EffectContext = GetAbilitySystemComponentFromActorInfo()->MakeEffectContext();
-        CueParams.EffectContext.AddSourceObject(EquippedWeapon);
+        if (CueParams.EffectContext.IsValid() && EquippedWeapon) CueParams.EffectContext.AddSourceObject(EquippedWeapon);
         GetAbilitySystemComponentFromActorInfo()->ExecuteGameplayCue(WeaponData->ChargeSecondaryCueTag, CueParams);
     }
 
@@ -212,59 +215,51 @@ void UGA_ChargedShotgun_SecondaryFire::HandleSecondaryFullCharge()
     bOverchargedShotStored = true;
 
     // Remove charging GameplayEffect and tag
-    if (SecondaryChargeGEClass)
+    if (SecondaryChargeGEClass && GetAbilitySystemComponentFromActorInfo())
     {
-        FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(SecondaryChargeGEClass.GetDefaultObject()->GetGrantedTags());
+        // Assuming ChargeSecondaryInProgressTag is granted by SecondaryChargeGEClass
+        FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(FGameplayTagContainer(ChargeSecondaryInProgressTag));
         GetAbilitySystemComponentFromActorInfo()->RemoveActiveEffects(Query);
     }
-    GetAbilitySystemComponentFromActorInfo()->RemoveLooseGameplayTag(ChargeSecondaryInProgressTag);
-    if (WeaponData->ChargeSecondaryCueTag.IsValid()) // Stop charging cue
+    if (GetAbilitySystemComponentFromActorInfo()) GetAbilitySystemComponentFromActorInfo()->RemoveLooseGameplayTag(ChargeSecondaryInProgressTag);
+    if (WeaponData && WeaponData->ChargeSecondaryCueTag.IsValid() && GetAbilitySystemComponentFromActorInfo()) // Stop charging cue
     {
         GetAbilitySystemComponentFromActorInfo()->RemoveGameplayCue(WeaponData->ChargeSecondaryCueTag);
     }
 
     // Activate "Overcharged" GameplayCue and Tag
-    if (WeaponData->OverchargedCueTag.IsValid())
+    if (WeaponData && WeaponData->OverchargedCueTag.IsValid() && GetAbilitySystemComponentFromActorInfo())
     {
         FGameplayCueParameters CueParams;
         CueParams.Instigator = GetAvatarActorFromActorInfo();
         CueParams.EffectContext = GetAbilitySystemComponentFromActorInfo()->MakeEffectContext();
-        CueParams.EffectContext.AddSourceObject(EquippedWeapon);
+        if (CueParams.EffectContext.IsValid() && EquippedWeapon) CueParams.EffectContext.AddSourceObject(EquippedWeapon);
         GetAbilitySystemComponentFromActorInfo()->ExecuteGameplayCue(WeaponData->OverchargedCueTag, CueParams);
     }
-    GetAbilitySystemComponentFromActorInfo()->AddLooseGameplayTag(OverchargedStateTag);
-
-    // Play a sound indicating full charge if desired (could be part of OverchargedCueTag)
-    // For example: if (WeaponData->SecondaryChargeCompleteSound) UGameplayStatics::PlaySound...
+    if (GetAbilitySystemComponentFromActorInfo()) GetAbilitySystemComponentFromActorInfo()->AddLooseGameplayTag(OverchargedStateTag);
 
     UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_SecondaryFire: Overcharged shot is stored. Waiting for input release."));
-    // The ability remains active, waiting for InputReleased to fire.
 }
 
-void UGA_ChargedShotgun_SecondaryFire::InputReleased(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo)
+void UGA_ChargedShotgun_SecondaryFire::InputReleased(float TimeHeld)
 {
-    UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_SecondaryFire: Input Released. bIsCharging: %d, bOverchargedShotStored: %d"), bIsCharging, bOverchargedShotStored);
+    UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_SecondaryFire: Input Released after %f seconds. bIsCharging: %d, bOverchargedShotStored: %d"), TimeHeld, bIsCharging, bOverchargedShotStored);
 
     if (bOverchargedShotStored)
     {
-        // We have a stored shot, fire it.
         AttemptFireOverchargedShot();
-        // AttemptFireOverchargedShot will call EndAbility internally.
     }
     else if (bIsCharging)
     {
-        // Input released mid-charge, before full charge was reached.
         UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_SecondaryFire: Input released during secondary charge. Aborting charge."));
-        bInputWasReleasedDuringCharge = true; // Set flag for HandleSecondaryFullCharge if it fires very close to this
-        ResetAbilityState(); // Stop charge sounds/visuals, clear timer, remove GEs/tags.
-        EndAbility(Handle, ActorInfo, ActivationInfo, true, false); // End normally, no penalty.
+        bInputWasReleasedDuringCharge = true;
+        ResetAbilityState();
+        EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
     }
     else
     {
-        // Input released, but no charge was active and no shot was stored.
-        // This might happen if the ability was cancelled or ended for other reasons before input release.
         UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_SecondaryFire: Input released, but no charge active or shot stored. Ending."));
-        EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+        EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
     }
 }
 
@@ -277,17 +272,15 @@ void UGA_ChargedShotgun_SecondaryFire::AttemptFireOverchargedShot()
         return;
     }
 
-    // Final ammo check before firing
     if (WeaponData->AmmoAttribute.IsValid() && GetAbilitySystemComponentFromActorInfo()->GetNumericAttribute(WeaponData->AmmoAttribute) <= 0)
     {
         UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_SecondaryFire::AttemptFireOverchargedShot: Out of ammo just before firing."));
         if (WeaponData->EmptySound) UGameplayStatics::PlaySoundAtLocation(GetWorld(), WeaponData->EmptySound, GetAvatarActorFromActorInfo()->GetActorLocation());
-        ResetAbilityState(false); // Reset visual state of charge but don't clear timers if any were about to fire (though they shouldn't be)
-        CancelAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true); // Cancel as we can't fire
+        ResetAbilityState(false);
+        CancelAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true);
         return;
     }
 
-    // Apply Ammo Cost
     if (AmmoCostGEClass)
     {
         FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(AmmoCostGEClass, GetAbilityLevel());
@@ -311,7 +304,6 @@ void UGA_ChargedShotgun_SecondaryFire::AttemptFireOverchargedShot()
         return;
     }
 
-    // Play Fire Montage
     UAnimMontage* FireMontage1P = WeaponData->FireMontage_1P;
     UAnimMontage* FireMontage3P = WeaponData->FireMontage_3P;
     UAnimMontage* MontageToPlay = Character->IsLocallyControlled() && FireMontage1P ? FireMontage1P : FireMontage3P;
@@ -326,7 +318,6 @@ void UGA_ChargedShotgun_SecondaryFire::AttemptFireOverchargedShot()
         FireMontageTask->ReadyForActivation();
     }
 
-    // Get muzzle location and aim direction
     FVector MuzzleLocation;
     FRotator AimRotation;
     Character->GetActorEyesViewPoint(MuzzleLocation, AimRotation);
@@ -336,9 +327,8 @@ void UGA_ChargedShotgun_SecondaryFire::AttemptFireOverchargedShot()
     }
     FVector AimDirection = AimRotation.Vector();
 
-    // Perform the hitscan shot
-    float DamagePerPellet = 15.0f; // Placeholder - should be data-driven from WeaponData for secondary
-    TSubclassOf<UDamageType> DamageType = UDamageType::StaticClass(); // Placeholder
+    float DamagePerPellet = 15.0f;
+    TSubclassOf<UDamageType> DamageType = UDamageType::StaticClass();
 
     EquippedWeapon->PerformHitscanShot(
         MuzzleLocation,
@@ -353,19 +343,18 @@ void UGA_ChargedShotgun_SecondaryFire::AttemptFireOverchargedShot()
         WeaponData->ImpactEffectCueTag
     );
 
-    // Play Muzzle Flash GameplayCue
-    if (WeaponData->MuzzleFlashCueTag.IsValid())
+    if (WeaponData->MuzzleFlashCueTag.IsValid() && GetAbilitySystemComponentFromActorInfo())
     {
         FGameplayCueParameters CueParams;
         CueParams.Location = MuzzleLocation;
         CueParams.Normal = AimDirection;
         CueParams.Instigator = Character;
         CueParams.EffectContext = GetAbilitySystemComponentFromActorInfo()->MakeEffectContext();
-        CueParams.EffectContext.AddSourceObject(EquippedWeapon);
-        GetAbilitySystemComponentFromActorInfo()->ExecuteGameplayCue(WeaponData->MuzzleFlashCueTag, CueParams, GetAbilitySystemComponentFromActorInfo()->ScopedPredictionKey);
+        if (CueParams.EffectContext.IsValid() && EquippedWeapon) CueParams.EffectContext.AddSourceObject(EquippedWeapon);
+        // Removed ScopedPredictionKey from here
+        GetAbilitySystemComponentFromActorInfo()->ExecuteGameplayCue(WeaponData->MuzzleFlashCueTag, CueParams);
     }
 
-    // Play fire sound
     if (WeaponData->ShotgunBlastSound) UGameplayStatics::PlaySoundAtLocation(GetWorld(), WeaponData->ShotgunBlastSound, MuzzleLocation);
     else if (WeaponData->FireSound) UGameplayStatics::PlaySoundAtLocation(GetWorld(), WeaponData->FireSound, MuzzleLocation);
 
@@ -373,17 +362,13 @@ void UGA_ChargedShotgun_SecondaryFire::AttemptFireOverchargedShot()
 
     ApplyWeaponLockoutCooldown();
 
-    // Clean up "Overcharged" state
-    GetAbilitySystemComponentFromActorInfo()->RemoveLooseGameplayTag(OverchargedStateTag);
-    if (WeaponData->OverchargedCueTag.IsValid())
+    if (GetAbilitySystemComponentFromActorInfo()) GetAbilitySystemComponentFromActorInfo()->RemoveLooseGameplayTag(OverchargedStateTag);
+    if (WeaponData->OverchargedCueTag.IsValid() && GetAbilitySystemComponentFromActorInfo())
     {
         GetAbilitySystemComponentFromActorInfo()->RemoveGameplayCue(WeaponData->OverchargedCueTag);
     }
     bOverchargedShotStored = false;
 
-    // End the ability after firing. If montage is playing, it will continue.
-    // If we need to wait for montage, EndAbility should be called in OnMontageCompleted/BlendOut.
-    // For now, assume firing is immediate and cooldown starts now.
     EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
 }
 
@@ -393,8 +378,6 @@ void UGA_ChargedShotgun_SecondaryFire::ApplyWeaponLockoutCooldown()
     {
         UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_SecondaryFire: Applying weapon lockout cooldown. Duration from GE. Tag: %s"), *WeaponLockoutTag.ToString());
         FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(WeaponLockoutGEClass);
-        // The GE itself should define the duration (WeaponData->WeaponStats.SecondaryFireCooldown)
-        // and apply the WeaponLockoutTag.
         ApplyGameplayEffectSpecToOwner(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), SpecHandle);
     }
     else
@@ -405,26 +388,24 @@ void UGA_ChargedShotgun_SecondaryFire::ApplyWeaponLockoutCooldown()
 
 void UGA_ChargedShotgun_SecondaryFire::ResetAbilityState(bool bClearTimers)
 {
-    if (bClearTimers)
+    if (bClearTimers && GetWorld()) // Added GetWorld check
     {
         GetWorld()->GetTimerManager().ClearTimer(SecondaryChargeTimerHandle);
     }
 
     bIsCharging = false;
-    // bOverchargedShotStored is reset specifically when fired or charge aborted.
-    // bInputWasReleasedDuringCharge is reset at the start of activation.
 
     UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
     if (!ASC) return;
 
-    // Remove charging GameplayEffect if active
-    if (SecondaryChargeGEClass && ASC->GetAppliedGameplayEffectSpec(GetCurrentAbilitySpecHandle())) // Check if GE from this ability is active
+    if (SecondaryChargeGEClass && ASC->HasMatchingGameplayTag(ChargeSecondaryInProgressTag))
     {
-        FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(SecondaryChargeGEClass.GetDefaultObject()->GetGrantedTags());
+        // More robustly remove the specific GE if it's infinite/duration and you have its handle.
+        // For now, removing by the granted tag is a common pattern.
+        FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(FGameplayTagContainer(ChargeSecondaryInProgressTag));
         ASC->RemoveActiveEffects(Query);
     }
 
-    // Remove tags and cues
     if (ASC->HasMatchingGameplayTag(ChargeSecondaryInProgressTag))
     {
         ASC->RemoveLooseGameplayTag(ChargeSecondaryInProgressTag);
@@ -442,10 +423,7 @@ void UGA_ChargedShotgun_SecondaryFire::ResetAbilityState(bool bClearTimers)
 void UGA_ChargedShotgun_SecondaryFire::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
 {
     UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_SecondaryFire: EndAbility called. WasCancelled: %s"), bWasCancelled ? TEXT("true") : TEXT("false"));
-
-    // Ensure all states are cleaned up, especially if cancelled.
-    // If not cancelled, some states (like Overcharged) are cleaned up during the fire sequence.
-    ResetAbilityState(); // This will clear timers and GEs/Tags
+    ResetAbilityState();
 
     if (WaitInputReleaseTask)
     {
@@ -453,8 +431,6 @@ void UGA_ChargedShotgun_SecondaryFire::EndAbility(const FGameplayAbilitySpecHand
     }
     if (FireMontageTask)
     {
-        // If ability ends before montage, montage should be stopped.
-        // If montage is meant to complete, EndAbility should be called from montage callbacks.
         FireMontageTask->EndTask();
     }
 
@@ -464,7 +440,7 @@ void UGA_ChargedShotgun_SecondaryFire::EndAbility(const FGameplayAbilitySpecHand
 void UGA_ChargedShotgun_SecondaryFire::CancelAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateCancelAbility)
 {
     UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_SecondaryFire: CancelAbility called."));
-    ResetAbilityState(); // Ensure everything is clean
+    ResetAbilityState();
 
     if (WaitInputReleaseTask)
     {
@@ -477,13 +453,10 @@ void UGA_ChargedShotgun_SecondaryFire::CancelAbility(const FGameplayAbilitySpecH
     Super::CancelAbility(Handle, ActorInfo, ActivationInfo, bReplicateCancelAbility);
 }
 
-// --- Montage Callbacks ---
 void UGA_ChargedShotgun_SecondaryFire::OnMontageCompleted()
 {
-    // If ability logic is tied to montage finishing (e.g. cooldown applied after anim), do it here.
-    // For now, assuming cooldowns/etc are applied when shot is initiated.
-    // If the ability hasn't ended yet, this could be a place to call EndAbility.
-    // However, current logic ends ability after firing, montage might still be blending out.
+    // If ability doesn't end itself after firing, this could be a place to call EndAbility.
+    // For now, EndAbility is called in AttemptFireOverchargedShot.
 }
 
 void UGA_ChargedShotgun_SecondaryFire::OnMontageBlendOut()
@@ -493,12 +466,10 @@ void UGA_ChargedShotgun_SecondaryFire::OnMontageBlendOut()
 
 void UGA_ChargedShotgun_SecondaryFire::OnMontageInterrupted()
 {
-    // If montage is interrupted, it's safest to cancel the ability to ensure clean state.
     CancelAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true);
 }
 
 void UGA_ChargedShotgun_SecondaryFire::OnMontageCancelled()
 {
-    // Same as interrupted.
     CancelAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true);
 }

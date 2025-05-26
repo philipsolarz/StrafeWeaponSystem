@@ -2,11 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "AttributeSet.h"
-#include "AbilitySystemComponent.h" // Required for UAbilitySystemComponent
-#include "Net/UnrealNetwork.h" // Required for DOREPLIFETIME
+#include "AbilitySystemComponent.h" 
+#include "Net/UnrealNetwork.h" 
 #include "StrafeAttributeSet.generated.h"
 
-// Uses macros from AttributeSet.h
 #define ATTRIBUTE_ACCESSORS(ClassName, PropertyName) \
 	GAMEPLAYATTRIBUTE_PROPERTY_GETTER(ClassName, PropertyName) \
 	GAMEPLAYATTRIBUTE_VALUE_GETTER(PropertyName) \
@@ -21,11 +20,9 @@ class STRAFEWEAPONSYSTEM_API UStrafeAttributeSet : public UAttributeSet
 public:
 	UStrafeAttributeSet();
 
-	// AttributeSet Overrides
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	// Ammo attributes
-	// Example: Rocket Launcher
+	// --- Ammo Attributes ---
 	UPROPERTY(BlueprintReadOnly, Category = "Ammo", ReplicatedUsing = OnRep_RocketAmmo)
 	FGameplayAttributeData RocketAmmo;
 	ATTRIBUTE_ACCESSORS(UStrafeAttributeSet, RocketAmmo);
@@ -34,7 +31,6 @@ public:
 	FGameplayAttributeData MaxRocketAmmo;
 	ATTRIBUTE_ACCESSORS(UStrafeAttributeSet, MaxRocketAmmo);
 
-	// Example: Sticky Grenade Launcher
 	UPROPERTY(BlueprintReadOnly, Category = "Ammo", ReplicatedUsing = OnRep_StickyGrenadeAmmo)
 	FGameplayAttributeData StickyGrenadeAmmo;
 	ATTRIBUTE_ACCESSORS(UStrafeAttributeSet, StickyGrenadeAmmo);
@@ -43,7 +39,22 @@ public:
 	FGameplayAttributeData MaxStickyGrenadeAmmo;
 	ATTRIBUTE_ACCESSORS(UStrafeAttributeSet, MaxStickyGrenadeAmmo);
 
-	// Placeholder for other attributes you might add
+	UPROPERTY(BlueprintReadOnly, Category = "Ammo", ReplicatedUsing = OnRep_ShotgunAmmo)
+	FGameplayAttributeData ShotgunAmmo;
+	ATTRIBUTE_ACCESSORS(UStrafeAttributeSet, ShotgunAmmo);
+
+	UPROPERTY(BlueprintReadOnly, Category = "Ammo", ReplicatedUsing = OnRep_MaxShotgunAmmo)
+	FGameplayAttributeData MaxShotgunAmmo;
+	ATTRIBUTE_ACCESSORS(UStrafeAttributeSet, MaxShotgunAmmo);
+
+	// --- Weapon State Attributes (Optional - could also be tags) ---
+	// Example: Could be used if a GE applies a lockout by reducing this to 0
+	// UPROPERTY(BlueprintReadOnly, Category = "WeaponState", ReplicatedUsing = OnRep_WeaponLockout)
+	// FGameplayAttributeData WeaponLockout; 
+	// ATTRIBUTE_ACCESSORS(UStrafeAttributeSet, WeaponLockout);
+
+
+	// --- Standard Character Attributes (Examples) ---
 	// UPROPERTY(BlueprintReadOnly, Category = "Health", ReplicatedUsing = OnRep_Health)
 	// FGameplayAttributeData Health;
 	// ATTRIBUTE_ACCESSORS(UStrafeAttributeSet, Health);
@@ -56,27 +67,26 @@ public:
 	// FGameplayAttributeData MovementSpeed;
 	// ATTRIBUTE_ACCESSORS(UStrafeAttributeSet, MovementSpeed);
 
-
 protected:
-	// Replication functions
 	UFUNCTION()
 	virtual void OnRep_RocketAmmo(const FGameplayAttributeData& OldRocketAmmo);
-
 	UFUNCTION()
 	virtual void OnRep_MaxRocketAmmo(const FGameplayAttributeData& OldMaxRocketAmmo);
-
 	UFUNCTION()
 	virtual void OnRep_StickyGrenadeAmmo(const FGameplayAttributeData& OldStickyGrenadeAmmo);
-
 	UFUNCTION()
 	virtual void OnRep_MaxStickyGrenadeAmmo(const FGameplayAttributeData& OldMaxStickyGrenadeAmmo);
+	UFUNCTION()
+	virtual void OnRep_ShotgunAmmo(const FGameplayAttributeData& OldShotgunAmmo);
+	UFUNCTION()
+	virtual void OnRep_MaxShotgunAmmo(const FGameplayAttributeData& OldMaxShotgunAmmo);
 
 	// UFUNCTION()
+	// virtual void OnRep_WeaponLockout(const FGameplayAttributeData& OldWeaponLockout);
+	// UFUNCTION()
 	// virtual void OnRep_Health(const FGameplayAttributeData& OldHealth);
-	//
 	// UFUNCTION()
 	// virtual void OnRep_MaxHealth(const FGameplayAttributeData& OldMaxHealth);
-	//
 	// UFUNCTION()
 	// virtual void OnRep_MovementSpeed(const FGameplayAttributeData& OldMovementSpeed);
 };
