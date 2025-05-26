@@ -12,7 +12,7 @@ URaceStateComponent::URaceStateComponent()
 	CurrentRaceTime = 0.0f;
 	LastCheckpointReached = -1;
 	bIsRaceActiveForPlayer = false;
-	BestRaceTime.TotalTime = FLT_MAX; // Initialize best time to a very high number
+	BestRaceTime.TotalTime = -1.0f;
 }
 
 void URaceStateComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -87,37 +87,61 @@ void URaceStateComponent::FinishedRace(int32 FinalCheckpointIndex, int32 TotalCh
 {
 	if (GetOwner() && GetOwner()->HasAuthority() && bIsRaceActiveForPlayer)
 	{
-		// Check if all actual checkpoints (excluding start, including finish) have been hit
-		// If finish line is the Nth checkpoint (order index N-1), and there are M intermediate checkpoints,
-		// then TotalCheckpointsInRace would be M+2 (start + M intermediates + finish).
-		// LastCheckpointReached should be TotalCheckpointsInRace - 1 for a valid finish.
-		if (LastCheckpointReached == FinalCheckpointIndex && CurrentSplitTimes.Num() == TotalCheckpointsInRace - 1) // -1 because finish line split isn't added yet
+		// --- Add UE_LOGs here for debugging the values in this function ---
+		UE_LOG(LogTemp, Warning, TEXT("URaceStateComponent::FinishedRace for %s: LastCheckpointReached: %d, FinalCheckpointIndex (param): %d, CurrentSplitTimes.Num(): %d, TotalCheckpointsInRace (param): %d"),
+			*GetOwner()->GetName(),
+			LastCheckpointReached,
+			FinalCheckpointIndex,
+			CurrentSplitTimes.Num(),
+			TotalCheckpointsInRace);
+		// --- End UE_LOGs ---
+
+		// Corrected Condition:
+		// 1. LastCheckpointReached should now be the index of the finish line because ReachedCheckpoint was called for it.
+		// 2. CurrentSplitTimes.Num() should be equal to TotalCheckpointsInRace, as a split is added for every checkpoint from Start to Finish inclusive.
+		if (LastCheckpointReached == FinalCheckpointIndex && CurrentSplitTimes.Num() == TotalCheckpointsInRace)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("URaceStateComponent::FinishedRace - CONDITIONS MET for %s! Processing finish."), *GetOwner()->GetName());
 			bIsRaceActiveForPlayer = false;
 			GetWorld()->GetTimerManager().ClearTimer(RaceTimerHandle);
 
-			//UE_LOG(LogTemp, Warning, TEXT("Player %s finished race at time %f."), *GetOwner()->GetName(), CurrentRaceTime);
+			// UE_LOG(LogTemp, Warning, TEXT("Player %s finished race at time %f."), *GetOwner()->GetName(), CurrentRaceTime); // Already logged above effectively
 
-			if (CurrentRaceTime < BestRaceTime.TotalTime)
+			if (BestRaceTime.TotalTime < 0.0f || CurrentRaceTime < BestRaceTime.TotalTime)
 			{
+				UE_LOG(LogTemp, Warning, TEXT("Player %s got a NEW BEST TIME! New: %f, Old was: %f"), *GetOwner()->GetName(), CurrentRaceTime, BestRaceTime.TotalTime);
 				BestRaceTime.TotalTime = CurrentRaceTime;
 				BestRaceTime.SplitTimes = CurrentSplitTimes;
-				//UE_LOG(LogTemp, Warning, TEXT("Player %s got a new best time: %f"), *GetOwner()->GetName(), BestRaceTime.TotalTime);
-				OnRep_BestRaceTime(); // For server
+				if (GetOwner() && GetOwner()->HasAuthority()) // Ensure server directly triggers its own OnRep logic if effects are desired immediately
+				{
+					OnRep_BestRaceTime();
+				}
 				OnPlayerNewBestTime.Broadcast(BestRaceTime);
 			}
 
-			OnRep_IsRaceActiveForPlayer(); // For server
+			if (GetOwner() && GetOwner()->HasAuthority()) // Ensure server directly triggers its own OnRep logic
+			{
+				OnRep_IsRaceActiveForPlayer();
+			}
 			NotifyStateChange();
-			OnPlayerFinishedRace.Broadcast(CurrentRaceTime);
+			OnPlayerFinishedRace.Broadcast(CurrentRaceTime); // This should now fire!
+			UE_LOG(LogTemp, Warning, TEXT("URaceStateComponent::FinishedRace - OnPlayerFinishedRace BROADCAST for %s with time %f."), *GetOwner()->GetName(), CurrentRaceTime);
 		}
 		else
 		{
-			//UE_LOG(LogTemp, Warning, TEXT("Player %s crossed finish line but missed checkpoints. Last hit: %d, Splits: %d, Required splits for finish: %d"),
-				//*GetOwner()->GetName(), LastCheckpointReached, CurrentSplitTimes.Num(), TotalCheckpointsInRace -1);
-			// Optionally, invalidate the run here or handle as DNF
-			ResetRaceState(); // Or some other penalty/handling
+			UE_LOG(LogTemp, Error, TEXT("URaceStateComponent::FinishedRace - CONDITIONS NOT MET for %s. Race not finished properly. LastCP: %d (Expected %d), Splits.Num(): %d (Expected %d)"),
+				*GetOwner()->GetName(), LastCheckpointReached, FinalCheckpointIndex, CurrentSplitTimes.Num(), TotalCheckpointsInRace);
+
+			// Consider what to do if conditions are not met. For now, it just logs.
+			// ResetRaceState(); // You might want to uncomment this if a failed finish means the run is void.
 		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("URaceStateComponent::FinishedRace for %s: Not processed because GetOwner()->HasAuthority() is %s OR bIsRaceActiveForPlayer is %s."),
+			GetOwner() ? *GetOwner()->GetName() : TEXT("UnknownOwner"),
+			(GetOwner() && GetOwner()->HasAuthority()) ? TEXT("true") : TEXT("false"),
+			bIsRaceActiveForPlayer ? TEXT("true") : TEXT("false"));
 	}
 }
 
@@ -178,10 +202,10 @@ void URaceStateComponent::OnRep_LastCheckpointReached()
 	// This is mostly for client-side prediction or HUD updates.
 	// The actual OnPlayerCheckpointHit should be fired by the server when logic dictates.
 	// If CurrentSplitTimes has an entry for this index, fire client-side event.
-	if (CurrentSplitTimes.IsValidIndex(LastCheckpointReached) && LastCheckpointReached >= 0) // LastCheckpointReached can be -1
-	{
-		OnPlayerCheckpointHit.Broadcast(LastCheckpointReached, CurrentSplitTimes[LastCheckpointReached]);
-	}
+	//if (CurrentSplitTimes.IsValidIndex(LastCheckpointReached) && LastCheckpointReached >= 0) // LastCheckpointReached can be -1
+	//{
+	//	OnPlayerCheckpointHit.Broadcast(LastCheckpointReached, CurrentSplitTimes[LastCheckpointReached]);
+	//}
 	NotifyStateChange();
 }
 
