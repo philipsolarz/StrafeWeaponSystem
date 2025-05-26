@@ -1,5 +1,5 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
+// Updated file: Source/StrafeWeaponSystem/Public/WeaponDataAsset.h
+// Add new UPROPERTY() fields here, within the FWeaponStats struct or directly in UWeaponDataAsset as needed.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -21,6 +21,7 @@ enum class EAmmoType : uint8 // This enum might become redundant if ammo is pure
     None,
     Rockets,
     StickyGrenades,
+    ShotgunShells UMETA(DisplayName = "Shotgun Shells"), // Added for Shotgun
     // Add more as needed
 };
 
@@ -66,6 +67,37 @@ struct FWeaponStats
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Sticky")
     float StickyAttachmentOffset = 2.0f;
+
+    // CHARGED SHOTGUN SPECIFIC STATS
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|ChargedShotgun", meta = (EditCondition = "WeaponName == 'ChargedShotgun'", EditConditionHides))
+    float PrimaryChargeTime = 1.5f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|ChargedShotgun", meta = (EditCondition = "WeaponName == 'ChargedShotgun'", EditConditionHides))
+    float PrimaryEarlyReleaseCooldown = 0.25f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|ChargedShotgun", meta = (EditCondition = "WeaponName == 'ChargedShotgun'", EditConditionHides))
+    int32 PrimaryPelletCount = 8;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|ChargedShotgun", meta = (EditCondition = "WeaponName == 'ChargedShotgun'", EditConditionHides))
+    float PrimarySpreadAngle = 5.0f; // Max angle from center
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|ChargedShotgun", meta = (EditCondition = "WeaponName == 'ChargedShotgun'", EditConditionHides))
+    float PrimaryHitscanRange = 5000.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|ChargedShotgun", meta = (EditCondition = "WeaponName == 'ChargedShotgun'", EditConditionHides))
+    float SecondaryChargeTime = 3.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|ChargedShotgun", meta = (EditCondition = "WeaponName == 'ChargedShotgun'", EditConditionHides))
+    float SecondaryFireCooldown = 3.0f; // Locks out both fire modes
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|ChargedShotgun", meta = (EditCondition = "WeaponName == 'ChargedShotgun'", EditConditionHides))
+    int32 SecondaryPelletCount = 12; // Overcharged shot might have more pellets
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|ChargedShotgun", meta = (EditCondition = "WeaponName == 'ChargedShotgun'", EditConditionHides))
+    float SecondarySpreadAngle = 3.0f; // And tighter spread
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|ChargedShotgun", meta = (EditCondition = "WeaponName == 'ChargedShotgun'", EditConditionHides))
+    float SecondaryHitscanRange = 7500.0f;
 };
 
 UCLASS()
@@ -81,10 +113,10 @@ public:
     USkeletalMesh* WeaponMesh;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effects")
-    class UNiagaraSystem* MuzzleFlashEffect;
+    class UNiagaraSystem* MuzzleFlashEffect; // Used by GameplayCue
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effects")
-    USoundBase* FireSound;
+    USoundBase* FireSound; // Used by GameplayCue
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effects")
     USoundBase* EmptySound; // Played by UI or a specific "OutOfAmmo" feedback ability/cue
@@ -173,8 +205,39 @@ public:
     FGameplayTag MuzzleFlashCueTag;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|Effects")
-    FGameplayTag ExplosionEffectCueTag;
+    FGameplayTag ExplosionEffectCueTag; // Not for shotgun, but keep for other weapons
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|Effects")
-    FGameplayTag ImpactEffectCueTag; // For future hitscan weapons
+    FGameplayTag ImpactEffectCueTag; // For hitscan weapons, including shotgun
+
+    // CHARGED SHOTGUN SPECIFIC GAS PROPERTIES
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|ChargedShotgun", meta = (EditCondition = "WeaponStats.WeaponName == 'ChargedShotgun'", EditConditionHides))
+    TSubclassOf<UGameplayEffect> PrimaryFireChargeGE; // Applied while charging primary
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|ChargedShotgun", meta = (EditCondition = "WeaponStats.WeaponName == 'ChargedShotgun'", EditConditionHides))
+    TSubclassOf<UGameplayEffect> PrimaryFireEarlyReleaseCooldownGE; // Cooldown if primary charge is aborted
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|ChargedShotgun", meta = (EditCondition = "WeaponStats.WeaponName == 'ChargedShotgun'", EditConditionHides))
+    TSubclassOf<UGameplayEffect> SecondaryFireChargeGE; // Applied while charging secondary
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|ChargedShotgun", meta = (EditCondition = "WeaponStats.WeaponName == 'ChargedShotgun'", EditConditionHides))
+    TSubclassOf<UGameplayEffect> SecondaryFireWeaponLockoutGE; // Cooldown for both firemodes after secondary fire
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|ChargedShotgun", meta = (EditCondition = "WeaponStats.WeaponName == 'ChargedShotgun'", EditConditionHides))
+    USoundBase* PrimaryChargeSound; // Sound for primary charge
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|ChargedShotgun", meta = (EditCondition = "WeaponStats.WeaponName == 'ChargedShotgun'", EditConditionHides))
+    USoundBase* SecondaryChargeSound; // Sound for secondary charge
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|ChargedShotgun", meta = (EditCondition = "WeaponStats.WeaponName == 'ChargedShotgun'", EditConditionHides))
+    USoundBase* ShotgunBlastSound; // Sound for the actual shot
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|ChargedShotgun", meta = (EditCondition = "WeaponStats.WeaponName == 'ChargedShotgun'", EditConditionHides))
+    FGameplayTag ChargePrimaryCueTag; // GameplayCue for primary charging visual/sound
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|ChargedShotgun", meta = (EditCondition = "WeaponStats.WeaponName == 'ChargedShotgun'", EditConditionHides))
+    FGameplayTag ChargeSecondaryCueTag; // GameplayCue for secondary charging visual/sound
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS|ChargedShotgun", meta = (EditCondition = "WeaponStats.WeaponName == 'ChargedShotgun'", EditConditionHides))
+    FGameplayTag OverchargedCueTag; // GameplayCue for when secondary fire is fully charged and held
 };
