@@ -3,14 +3,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/GameMode.h"
-#include "StrafeGameMode.generated.h"
+#include "GameFramework/GameStateBase.h"
+#include "ArenaGameStateBase.generated.h"
 
 /**
  * 
  */
 UCLASS()
-class STRAFEWEAPONSYSTEM_API AStrafeGameMode : public AGameMode
+class STRAFEWEAPONSYSTEM_API AArenaGameStateBase : public AGameStateBase
 {
 	GENERATED_BODY()
 	
