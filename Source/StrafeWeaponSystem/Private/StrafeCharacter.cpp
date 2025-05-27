@@ -236,9 +236,15 @@ void AStrafeCharacter::Look(const FInputActionValue& Value)
 
 void AStrafeCharacter::Input_PrimaryFire_Pressed()
 {
-	if (AbilitySystemComponent && PrimaryFireInputTag.IsValid()) // Check tag validity
+	UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::Input_PrimaryFire_Pressed - Tag: %s, ASC: %s"),
+		PrimaryFireInputTag.IsValid() ? *PrimaryFireInputTag.ToString() : TEXT("Invalid"),
+		AbilitySystemComponent ? TEXT("Valid") : TEXT("Null"));
+
+	if (AbilitySystemComponent && PrimaryFireInputTag.IsValid())
 	{
-		AbilitySystemComponent->TryActivateAbilitiesByTag(FGameplayTagContainer(PrimaryFireInputTag)); // <<<<<<< CORRECTED
+		bool bSuccess = AbilitySystemComponent->TryActivateAbilitiesByTag(FGameplayTagContainer(PrimaryFireInputTag));
+		UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::Input_PrimaryFire_Pressed - TryActivateAbilitiesByTag returned: %s"),
+			bSuccess ? TEXT("Success") : TEXT("Failed"));
 	}
 }
 
@@ -270,15 +276,20 @@ void AStrafeCharacter::Input_SecondaryFire_Released()
 	}
 }
 
-
 void AStrafeCharacter::OnWeaponEquipped(ABaseWeapon* NewWeapon)
 {
-	if (!AbilitySystemComponent || !HasAuthority()) // Abilities should only be granted by the server
+	UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::OnWeaponEquipped called. NewWeapon: %s"), NewWeapon ? *NewWeapon->GetName() : TEXT("nullptr"));
+
+	if (!AbilitySystemComponent || !HasAuthority())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::OnWeaponEquipped - Early exit. ASC: %s, HasAuthority: %s"),
+			AbilitySystemComponent ? TEXT("Valid") : TEXT("Null"),
+			HasAuthority() ? TEXT("True") : TEXT("False"));
 		return;
 	}
 
 	// Clear any abilities granted by the previous weapon
+	UE_LOG(LogTemp, Log, TEXT("AStrafeCharacter::OnWeaponEquipped - Clearing %d previous weapon abilities"), CurrentWeaponAbilityHandles.Num());
 	for (FGameplayAbilitySpecHandle Handle : CurrentWeaponAbilityHandles)
 	{
 		AbilitySystemComponent->ClearAbility(Handle);
@@ -288,33 +299,70 @@ void AStrafeCharacter::OnWeaponEquipped(ABaseWeapon* NewWeapon)
 	if (NewWeapon && NewWeapon->GetWeaponData())
 	{
 		UWeaponDataAsset* WeaponData = NewWeapon->GetWeaponData();
+		UE_LOG(LogTemp, Log, TEXT("AStrafeCharacter::OnWeaponEquipped - Processing WeaponData: %s"), *WeaponData->GetName());
 
 		// Grant Primary Fire Ability
 		if (WeaponData->PrimaryFireAbility)
 		{
-			// Ensure the ability class is valid and get its CDO for InputID
-			if (UGA_WeaponActivate* AbilityCDO = WeaponData->PrimaryFireAbility->GetDefaultObject<UGA_WeaponActivate>())
+			UE_LOG(LogTemp, Log, TEXT("AStrafeCharacter::OnWeaponEquipped - PrimaryFireAbility class: %s"),
+				*WeaponData->PrimaryFireAbility->GetName());
+
+			// First check if it's actually a UGA_WeaponActivate subclass
+			if (!WeaponData->PrimaryFireAbility->IsChildOf(UGA_WeaponActivate::StaticClass()))
 			{
-				FGameplayAbilitySpecHandle SpecHandle = AbilitySystemComponent->GiveAbility(
-					FGameplayAbilitySpec(WeaponData->PrimaryFireAbility, 1, AbilityCDO->AbilityInputID, this)
-				);
-				CurrentWeaponAbilityHandles.Add(SpecHandle);
+				UE_LOG(LogTemp, Error, TEXT("AStrafeCharacter::OnWeaponEquipped - PrimaryFireAbility %s is not a child of UGA_WeaponActivate!"),
+					*WeaponData->PrimaryFireAbility->GetName());
+			}
+			else
+			{
+				UGA_WeaponActivate* AbilityCDO = WeaponData->PrimaryFireAbility->GetDefaultObject<UGA_WeaponActivate>();
+				if (AbilityCDO)
+				{
+					FGameplayAbilitySpecHandle SpecHandle = AbilitySystemComponent->GiveAbility(
+						FGameplayAbilitySpec(WeaponData->PrimaryFireAbility, 1, AbilityCDO->AbilityInputID, this)
+					);
+					CurrentWeaponAbilityHandles.Add(SpecHandle);
+					UE_LOG(LogTemp, Log, TEXT("AStrafeCharacter::OnWeaponEquipped - Granted primary ability with InputID: %d"), AbilityCDO->AbilityInputID);
+				}
+				else
+				{
+					UE_LOG(LogTemp, Error, TEXT("AStrafeCharacter::OnWeaponEquipped - Failed to get CDO for PrimaryFireAbility"));
+				}
 			}
 		}
 
 		// Grant Secondary Fire Ability
 		if (WeaponData->SecondaryFireAbility)
 		{
-			if (UGA_WeaponActivate* AbilityCDO = WeaponData->SecondaryFireAbility->GetDefaultObject<UGA_WeaponActivate>())
+			UE_LOG(LogTemp, Log, TEXT("AStrafeCharacter::OnWeaponEquipped - SecondaryFireAbility class: %s"),
+				*WeaponData->SecondaryFireAbility->GetName());
+
+			if (!WeaponData->SecondaryFireAbility->IsChildOf(UGA_WeaponActivate::StaticClass()))
 			{
-				FGameplayAbilitySpecHandle SpecHandle = AbilitySystemComponent->GiveAbility(
-					FGameplayAbilitySpec(WeaponData->SecondaryFireAbility, 1, AbilityCDO->AbilityInputID, this)
-				);
-				CurrentWeaponAbilityHandles.Add(SpecHandle);
+				UE_LOG(LogTemp, Error, TEXT("AStrafeCharacter::OnWeaponEquipped - SecondaryFireAbility %s is not a child of UGA_WeaponActivate!"),
+					*WeaponData->SecondaryFireAbility->GetName());
+			}
+			else
+			{
+				UGA_WeaponActivate* AbilityCDO = WeaponData->SecondaryFireAbility->GetDefaultObject<UGA_WeaponActivate>();
+				if (AbilityCDO)
+				{
+					FGameplayAbilitySpecHandle SpecHandle = AbilitySystemComponent->GiveAbility(
+						FGameplayAbilitySpec(WeaponData->SecondaryFireAbility, 1, AbilityCDO->AbilityInputID, this)
+					);
+					CurrentWeaponAbilityHandles.Add(SpecHandle);
+					UE_LOG(LogTemp, Log, TEXT("AStrafeCharacter::OnWeaponEquipped - Granted secondary ability with InputID: %d"), AbilityCDO->AbilityInputID);
+				}
+				else
+				{
+					UE_LOG(LogTemp, Error, TEXT("AStrafeCharacter::OnWeaponEquipped - Failed to get CDO for SecondaryFireAbility"));
+				}
 			}
 		}
-
-		// Potentially apply passive abilities/effects from the weapon here too
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::OnWeaponEquipped - No weapon or weapon data"));
 	}
 }
 

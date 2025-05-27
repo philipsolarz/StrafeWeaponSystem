@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Abilities/GameplayAbility.h"
+#include "GA_WeaponActivate.h"
 #include "GameplayTagContainer.h"
 #include "GA_ChargedShotgun_PrimaryFire.generated.h"
 
@@ -19,7 +19,7 @@ class UAbilityTask_PlayMontageAndWait;
  * and continuous charging if the input is held.
  */
 UCLASS(Blueprintable)
-class STRAFEWEAPONSYSTEM_API UGA_ChargedShotgun_PrimaryFire : public UGameplayAbility
+class STRAFEWEAPONSYSTEM_API UGA_ChargedShotgun_PrimaryFire : public UGA_WeaponActivate
 {
     GENERATED_BODY()
 
