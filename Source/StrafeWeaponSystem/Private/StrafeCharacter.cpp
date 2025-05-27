@@ -3,21 +3,21 @@
 #include "StrafeCharacter.h"
 #include "WeaponInventoryComponent.h"
 #include "BaseWeapon.h"
-#include "WeaponDataAsset.h" // Required for UWeaponDataAsset
+#include "WeaponDataAsset.h" 
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/SpringArmComponent.h"
-#include "GameFramework/CharacterMovementComponent.h" // Required for movement component settings
+#include "GameFramework/CharacterMovementComponent.h" 
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/LocalPlayer.h"
-#include "AbilitySystemComponent.h" // Required for UAbilitySystemComponent
-#include "StrafeAttributeSet.h"   // Required for UStrafeAttributeSet
-#include "GameplayAbilitySpec.h" //Required for FGameplayAbilitySpec
-#include "GameplayEffectTypes.h" // Required for FGameplayEffectContextHandle
-#include "GA_WeaponActivate.h"
+#include "AbilitySystemComponent.h" 
+#include "StrafeAttributeSet.h"   
+#include "GameplayAbilitySpec.h" 
+#include "GameplayEffectTypes.h" 
+#include "GA_WeaponActivate.h" // Required for AbilityCDO
 
 
 // Sets default values
@@ -27,17 +27,14 @@ AStrafeCharacter::AStrafeCharacter()
 
 	WeaponInventoryComponent = CreateDefaultSubobject<UWeaponInventoryComponent>(TEXT("WeaponInventoryComponent"));
 
-	// Create Ability System Component
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
-	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed); // Or Minimal for more optimization
+	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 
-	// Create Attribute Set
 	AttributeSet = CreateDefaultSubobject<UStrafeAttributeSet>(TEXT("AttributeSet"));
 
-	// Set default input tags
-	PrimaryFireInputTag = FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.PrimaryFire"));
-	SecondaryFireInputTag = FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.SecondaryFire"));
+	CurrentPrimaryFireInputID = -1;
+	CurrentSecondaryFireInputID = -1;
 }
 
 UAbilitySystemComponent* AStrafeCharacter::GetAbilitySystemComponent() const
@@ -51,35 +48,29 @@ void AStrafeCharacter::BeginPlay()
 
 	if (WeaponInventoryComponent)
 	{
-		// Listen for weapon equip events from the inventory
 		WeaponInventoryComponent->OnWeaponEquipped.AddDynamic(this, &AStrafeCharacter::OnWeaponEquipped);
 	}
 
-	// Add input mapping context
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
 		{
 			if (MovementMappingContext)
 			{
-				Subsystem->AddMappingContext(MovementMappingContext, 0); // Priority 0 for base movement
+				Subsystem->AddMappingContext(MovementMappingContext, 0);
 			}
 			if (WeaponMappingContext)
 			{
-				Subsystem->AddMappingContext(WeaponMappingContext, 1); // Priority 1 for weapon actions
+				Subsystem->AddMappingContext(WeaponMappingContext, 1);
 			}
 		}
 	}
-	// Server-side: If starting weapon is defined, add and equip it
-	// Note: ASC InitAbilityActorInfo will be called in PossessedBy/OnRep_PlayerState
-	// Attribute and ability initialization will also happen there.
 	if (HasAuthority())
 	{
 		if (WeaponInventoryComponent && StartingWeaponClass)
 		{
 			if (WeaponInventoryComponent->AddWeapon(StartingWeaponClass))
 			{
-				// Equipping will trigger OnWeaponEquipped, which handles ability granting
 				WeaponInventoryComponent->EquipWeapon(StartingWeaponClass);
 			}
 		}
@@ -92,7 +83,7 @@ void AStrafeCharacter::PossessedBy(AController* NewController)
 
 	if (AbilitySystemComponent)
 	{
-		AbilitySystemComponent->InitAbilityActorInfo(this, this); // Owner and Avatar are the Character itself
+		AbilitySystemComponent->InitAbilityActorInfo(this, this);
 		InitializeAttributes();
 		GiveDefaultAbilities();
 	}
@@ -104,11 +95,7 @@ void AStrafeCharacter::OnRep_PlayerState()
 
 	if (AbilitySystemComponent)
 	{
-		AbilitySystemComponent->InitAbilityActorInfo(this, this); // Owner and Avatar are the Character itself
-		// Attributes are already initialized by the server, clients just need to link up.
-		// If you have client-only predicted attributes, initialize them here if not replicated.
-		// For default abilities granted on spawn, clients might need to be granted them here too if not handled by initial replication.
-		// However, abilities granted from weapon equipping should replicate fine.
+		AbilitySystemComponent->InitAbilityActorInfo(this, this);
 	}
 }
 
@@ -131,12 +118,6 @@ void AStrafeCharacter::InitializeAttributes()
 		}
 		else
 		{
-			// Fallback: Manually initialize if no GE is set
-			// Example:
-			// AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetMaxRocketAmmoAttribute(), 20.f);
-			// AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetRocketAmmoAttribute(), 10.f);
-			// AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetMaxStickyGrenadeAmmoAttribute(), 8.f);
-			// AbilitySystemComponent->SetNumericAttributeBase(AttributeSet->GetStickyGrenadeAmmoAttribute(), 4.f);
 			UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::InitializeAttributes: No DefaultAttributesEffect set. Consider creating one to initialize attributes."));
 		}
 	}
@@ -178,23 +159,22 @@ void AStrafeCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		}
 		if (JumpAction)
 		{
-			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Triggered, this, &ACharacter::Jump);
 			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 		}
 
 		// Primary Fire
 		if (PrimaryFireAction)
 		{
-			EnhancedInputComponent->BindAction(PrimaryFireAction, ETriggerEvent::Started, this, &AStrafeCharacter::Input_PrimaryFire_Pressed);
-			// If your ability is instant or doesn't need a release:
-			// EnhancedInputComponent->BindAction(PrimaryFireAction, ETriggerEvent::Completed, this, &AStrafeCharacter::Input_PrimaryFire_Released);
+			EnhancedInputComponent->BindAction(PrimaryFireAction, ETriggerEvent::Triggered, this, &AStrafeCharacter::Input_PrimaryFire_Pressed);
+			EnhancedInputComponent->BindAction(PrimaryFireAction, ETriggerEvent::Completed, this, &AStrafeCharacter::Input_PrimaryFire_Released);
 		}
 
 		// Secondary Fire
 		if (SecondaryFireAction)
 		{
-			EnhancedInputComponent->BindAction(SecondaryFireAction, ETriggerEvent::Started, this, &AStrafeCharacter::Input_SecondaryFire_Pressed);
-			// EnhancedInputComponent->BindAction(SecondaryFireAction, ETriggerEvent::Completed, this, &AStrafeCharacter::Input_SecondaryFire_Released);
+			EnhancedInputComponent->BindAction(SecondaryFireAction, ETriggerEvent::Triggered, this, &AStrafeCharacter::Input_SecondaryFire_Pressed);
+			EnhancedInputComponent->BindAction(SecondaryFireAction, ETriggerEvent::Completed, this, &AStrafeCharacter::Input_SecondaryFire_Released);
 		}
 
 		// Weapon Switching
@@ -236,43 +216,46 @@ void AStrafeCharacter::Look(const FInputActionValue& Value)
 
 void AStrafeCharacter::Input_PrimaryFire_Pressed()
 {
-	UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::Input_PrimaryFire_Pressed - Tag: %s, ASC: %s"),
-		PrimaryFireInputTag.IsValid() ? *PrimaryFireInputTag.ToString() : TEXT("Invalid"),
+	UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::Input_PrimaryFire_Pressed - InputID: %d, ASC: %s"),
+		CurrentPrimaryFireInputID,
 		AbilitySystemComponent ? TEXT("Valid") : TEXT("Null"));
 
-	if (AbilitySystemComponent && PrimaryFireInputTag.IsValid())
+	if (AbilitySystemComponent && CurrentPrimaryFireInputID != -1)
 	{
-		bool bSuccess = AbilitySystemComponent->TryActivateAbilitiesByTag(FGameplayTagContainer(PrimaryFireInputTag));
-		UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::Input_PrimaryFire_Pressed - TryActivateAbilitiesByTag returned: %s"),
-			bSuccess ? TEXT("Success") : TEXT("Failed"));
+		AbilitySystemComponent->AbilityLocalInputPressed(CurrentPrimaryFireInputID);
 	}
 }
 
 void AStrafeCharacter::Input_PrimaryFire_Released()
 {
-	if (AbilitySystemComponent)
+	UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::Input_PrimaryFire_Released - InputID: %d, ASC: %s"),
+		CurrentPrimaryFireInputID,
+		AbilitySystemComponent ? TEXT("Valid") : TEXT("Null"));
+	if (AbilitySystemComponent && CurrentPrimaryFireInputID != -1)
 	{
-		// This would typically be used if your ability has a "Release" trigger
-		// For now, we are activating on press. If you need to cancel an ability on release:
-		// FGameplayTagContainer ReleaseTags;
-		// ReleaseTags.AddTag(PrimaryFireInputTag); // Or a specific "Cancel" tag
-		// AbilitySystemComponent->CancelAbilities(&ReleaseTags);
+		AbilitySystemComponent->AbilityLocalInputReleased(CurrentPrimaryFireInputID);
 	}
 }
 
 void AStrafeCharacter::Input_SecondaryFire_Pressed()
 {
-	if (AbilitySystemComponent && SecondaryFireInputTag.IsValid()) // Check tag validity
+	UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::Input_SecondaryFire_Pressed - InputID: %d, ASC: %s"),
+		CurrentSecondaryFireInputID,
+		AbilitySystemComponent ? TEXT("Valid") : TEXT("Null"));
+	if (AbilitySystemComponent && CurrentSecondaryFireInputID != -1)
 	{
-		AbilitySystemComponent->TryActivateAbilitiesByTag(FGameplayTagContainer(SecondaryFireInputTag)); // <<<<<<< CORRECTED
+		AbilitySystemComponent->AbilityLocalInputPressed(CurrentSecondaryFireInputID);
 	}
 }
 
 void AStrafeCharacter::Input_SecondaryFire_Released()
 {
-	if (AbilitySystemComponent)
+	UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::Input_SecondaryFire_Released - InputID: %d, ASC: %s"),
+		CurrentSecondaryFireInputID,
+		AbilitySystemComponent ? TEXT("Valid") : TEXT("Null"));
+	if (AbilitySystemComponent && CurrentSecondaryFireInputID != -1)
 	{
-		// Similar to PrimaryFire_Released
+		AbilitySystemComponent->AbilityLocalInputReleased(CurrentSecondaryFireInputID);
 	}
 }
 
@@ -280,21 +263,27 @@ void AStrafeCharacter::OnWeaponEquipped(ABaseWeapon* NewWeapon)
 {
 	UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::OnWeaponEquipped called. NewWeapon: %s"), NewWeapon ? *NewWeapon->GetName() : TEXT("nullptr"));
 
-	if (!AbilitySystemComponent || !HasAuthority())
+	if (!AbilitySystemComponent) // Removed HasAuthority() check here, clients also need to update InputIDs
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::OnWeaponEquipped - Early exit. ASC: %s, HasAuthority: %s"),
-			AbilitySystemComponent ? TEXT("Valid") : TEXT("Null"),
-			HasAuthority() ? TEXT("True") : TEXT("False"));
+		UE_LOG(LogTemp, Warning, TEXT("AStrafeCharacter::OnWeaponEquipped - Early exit. ASC: %s"),
+			AbilitySystemComponent ? TEXT("Valid") : TEXT("Null"));
 		return;
 	}
 
-	// Clear any abilities granted by the previous weapon
-	UE_LOG(LogTemp, Log, TEXT("AStrafeCharacter::OnWeaponEquipped - Clearing %d previous weapon abilities"), CurrentWeaponAbilityHandles.Num());
-	for (FGameplayAbilitySpecHandle Handle : CurrentWeaponAbilityHandles)
+	// Clear old abilities only if authoritative, and update input IDs for all
+	if (HasAuthority())
 	{
-		AbilitySystemComponent->ClearAbility(Handle);
+		UE_LOG(LogTemp, Log, TEXT("AStrafeCharacter::OnWeaponEquipped (Authority) - Clearing %d previous weapon abilities"), CurrentWeaponAbilityHandles.Num());
+		for (FGameplayAbilitySpecHandle Handle : CurrentWeaponAbilityHandles)
+		{
+			AbilitySystemComponent->ClearAbility(Handle);
+		}
+		CurrentWeaponAbilityHandles.Empty();
 	}
-	CurrentWeaponAbilityHandles.Empty();
+
+	// Reset current input IDs
+	CurrentPrimaryFireInputID = -1;
+	CurrentSecondaryFireInputID = -1;
 
 	if (NewWeapon && NewWeapon->GetWeaponData())
 	{
@@ -307,7 +296,6 @@ void AStrafeCharacter::OnWeaponEquipped(ABaseWeapon* NewWeapon)
 			UE_LOG(LogTemp, Log, TEXT("AStrafeCharacter::OnWeaponEquipped - PrimaryFireAbility class: %s"),
 				*WeaponData->PrimaryFireAbility->GetName());
 
-			// First check if it's actually a UGA_WeaponActivate subclass
 			if (!WeaponData->PrimaryFireAbility->IsChildOf(UGA_WeaponActivate::StaticClass()))
 			{
 				UE_LOG(LogTemp, Error, TEXT("AStrafeCharacter::OnWeaponEquipped - PrimaryFireAbility %s is not a child of UGA_WeaponActivate!"),
@@ -318,11 +306,15 @@ void AStrafeCharacter::OnWeaponEquipped(ABaseWeapon* NewWeapon)
 				UGA_WeaponActivate* AbilityCDO = WeaponData->PrimaryFireAbility->GetDefaultObject<UGA_WeaponActivate>();
 				if (AbilityCDO)
 				{
-					FGameplayAbilitySpecHandle SpecHandle = AbilitySystemComponent->GiveAbility(
-						FGameplayAbilitySpec(WeaponData->PrimaryFireAbility, 1, AbilityCDO->AbilityInputID, this)
-					);
-					CurrentWeaponAbilityHandles.Add(SpecHandle);
-					UE_LOG(LogTemp, Log, TEXT("AStrafeCharacter::OnWeaponEquipped - Granted primary ability with InputID: %d"), AbilityCDO->AbilityInputID);
+					CurrentPrimaryFireInputID = AbilityCDO->AbilityInputID; // Store InputID
+					if (HasAuthority()) // Grant ability only on server
+					{
+						FGameplayAbilitySpecHandle SpecHandle = AbilitySystemComponent->GiveAbility(
+							FGameplayAbilitySpec(WeaponData->PrimaryFireAbility, 1, AbilityCDO->AbilityInputID, this)
+						);
+						CurrentWeaponAbilityHandles.Add(SpecHandle);
+						UE_LOG(LogTemp, Log, TEXT("AStrafeCharacter::OnWeaponEquipped (Authority) - Granted primary ability with InputID: %d"), AbilityCDO->AbilityInputID);
+					}
 				}
 				else
 				{
@@ -347,11 +339,15 @@ void AStrafeCharacter::OnWeaponEquipped(ABaseWeapon* NewWeapon)
 				UGA_WeaponActivate* AbilityCDO = WeaponData->SecondaryFireAbility->GetDefaultObject<UGA_WeaponActivate>();
 				if (AbilityCDO)
 				{
-					FGameplayAbilitySpecHandle SpecHandle = AbilitySystemComponent->GiveAbility(
-						FGameplayAbilitySpec(WeaponData->SecondaryFireAbility, 1, AbilityCDO->AbilityInputID, this)
-					);
-					CurrentWeaponAbilityHandles.Add(SpecHandle);
-					UE_LOG(LogTemp, Log, TEXT("AStrafeCharacter::OnWeaponEquipped - Granted secondary ability with InputID: %d"), AbilityCDO->AbilityInputID);
+					CurrentSecondaryFireInputID = AbilityCDO->AbilityInputID; // Store InputID
+					if (HasAuthority()) // Grant ability only on server
+					{
+						FGameplayAbilitySpecHandle SpecHandle = AbilitySystemComponent->GiveAbility(
+							FGameplayAbilitySpec(WeaponData->SecondaryFireAbility, 1, AbilityCDO->AbilityInputID, this)
+						);
+						CurrentWeaponAbilityHandles.Add(SpecHandle);
+						UE_LOG(LogTemp, Log, TEXT("AStrafeCharacter::OnWeaponEquipped (Authority) - Granted secondary ability with InputID: %d"), AbilityCDO->AbilityInputID);
+					}
 				}
 				else
 				{

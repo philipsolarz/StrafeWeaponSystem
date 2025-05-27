@@ -39,29 +39,28 @@ public:
     virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
 
     /** Called when the input button for this ability is released. */
-    UFUNCTION() // Added UFUNCTION for delegate binding
-        void InputReleased(float TimeHeld); // Changed signature
+    UFUNCTION() // No longer virtual
+        void InputReleased(float TimeHeld);
 
 protected:
     UPROPERTY()
-    TObjectPtr<AChargedShotgun> EquippedWeapon; // Corrected to TObjectPtr
+    TObjectPtr<AChargedShotgun> EquippedWeapon;
 
     UPROPERTY()
-    TObjectPtr<const UWeaponDataAsset> WeaponData; // Corrected to TObjectPtr
+    TObjectPtr<const UWeaponDataAsset> WeaponData;
 
     // Tasks
     UPROPERTY()
-    TObjectPtr<UAbilityTask_WaitInputRelease> WaitInputReleaseTask; // Corrected to TObjectPtr
+    TObjectPtr<UAbilityTask_WaitInputRelease> WaitInputReleaseTask;
 
     UPROPERTY()
-    TObjectPtr<UAbilityTask_PlayMontageAndWait> FireMontageTask; // Corrected to TObjectPtr
+    TObjectPtr<UAbilityTask_PlayMontageAndWait> FireMontageTask;
 
     FTimerHandle ChargeTimerHandle;
-    // FTimerHandle ContinuousChargeDelayTimerHandle; // Removed for now, relying on bRetriggerInstancedAbility
 
     bool bIsCharging;
     bool bChargeComplete;
-    bool bInputReleasedEarly; // Flag to indicate if input was released before full charge
+    bool bInputReleasedEarly;
 
     // Internal functions
     void StartCharge();
@@ -70,9 +69,6 @@ protected:
     void ResetChargeState();
     void ApplyEarlyReleaseCooldown();
     void ApplyPrimaryFireCooldown();
-    // void StartContinuousChargeCheck(); // Removed
-    // void AttemptContinuousCharge(); // Removed
-
 
     UFUNCTION()
     void OnMontageCompleted();
@@ -88,16 +84,16 @@ protected:
 
 
     /** Gameplay Tags related to this ability */
-    FGameplayTag ChargeInProgressTag; // e.g., State.Weapon.Charging.Primary
-    FGameplayTag CooldownTagPrimaryFire; // Specific cooldown tag for primary fire from WeaponDataAsset
+    FGameplayTag ChargeInProgressTag;
+    FGameplayTag CooldownTagPrimaryFire;
 
     /** Gameplay Effects */
     TSubclassOf<UGameplayEffect> PrimaryChargeGEClass;
     TSubclassOf<UGameplayEffect> EarlyReleaseCooldownGEClass;
     TSubclassOf<UGameplayEffect> AmmoCostGEClass;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Cooldown") // Exposed to BP to set the Cooldown GE
-        TSubclassOf<UGameplayEffect> PrimaryFireCooldownGEClass;
+    UPROPERTY(EditDefaultsOnly, Category = "Cooldown")
+    TSubclassOf<UGameplayEffect> PrimaryFireCooldownGEClass;
 
     // How-to extend in Blueprints:
     // - Override K2_ActivateAbility for Blueprint-specific activation logic.

@@ -29,12 +29,11 @@ UGA_ChargedShotgun_PrimaryFire::UGA_ChargedShotgun_PrimaryFire()
 
     ChargeInProgressTag = FGameplayTag::RequestGameplayTag(FName("State.Weapon.ChargedShotgun.Charging.PrimaryFire"));
 
-    FGameplayTagContainer UpdatedTags = GetAssetTags();
-    UpdatedTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.PrimaryFire")));
-    UpdatedTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.ChargedShotgun.PrimaryFire")));
-    SetAssetTags(UpdatedTags);
+    // Add tags directly to the AbilityTags member in the constructor
+    AbilityTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.PrimaryFire")));
+    AbilityTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.ChargedShotgun.PrimaryFire")));
 
-    // The ability should also block itself during cooldown
+
     ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Cooldown.Weapon.ChargedShotgun.PrimaryFire")));
 }
 
@@ -85,7 +84,7 @@ bool UGA_ChargedShotgun_PrimaryFire::CanActivateAbility(const FGameplayAbilitySp
             return false;
         }
     }
-    else if (!ASC || (TempWeaponData && !TempWeaponData->AmmoAttribute.IsValid())) // Added TempWeaponData check for safety
+    else if (!ASC || (TempWeaponData && !TempWeaponData->AmmoAttribute.IsValid()))
     {
         UE_LOG(LogTemp, Warning, TEXT("GA_Shotgun_PrimaryFire::CanActivateAbility: ASC or AmmoAttribute is invalid. Ammo check skipped."));
     }
@@ -105,8 +104,12 @@ void UGA_ChargedShotgun_PrimaryFire::ActivateAbility(const FGameplayAbilitySpecH
     UE_LOG(LogTemp, Warning, TEXT("GA_ChargedShotgun_PrimaryFire::ActivateAbility called"));
     Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-    // After getting Character:
-    AStrafeCharacter* Character = GetStrafeCharacterFromActorInfo(); // Use the parent class method
+    bInputReleasedEarly = false;
+    bIsCharging = false;
+    bChargeComplete = false;
+
+
+    AStrafeCharacter* Character = GetStrafeCharacterFromActorInfo();
     if (!Character)
     {
         UE_LOG(LogTemp, Error, TEXT("GA_ChargedShotgun_PrimaryFire::ActivateAbility - No character found"));
@@ -114,8 +117,7 @@ void UGA_ChargedShotgun_PrimaryFire::ActivateAbility(const FGameplayAbilitySpecH
         return;
     }
 
-    // After getting weapon:
-    EquippedWeapon = Cast<AChargedShotgun>(GetEquippedWeaponFromActorInfo()); // Use the parent class method
+    EquippedWeapon = Cast<AChargedShotgun>(GetEquippedWeaponFromActorInfo());
     if (!EquippedWeapon)
     {
         UE_LOG(LogTemp, Error, TEXT("GA_ChargedShotgun_PrimaryFire::ActivateAbility - Failed to get AChargedShotgun from character"));
@@ -136,6 +138,7 @@ void UGA_ChargedShotgun_PrimaryFire::ActivateAbility(const FGameplayAbilitySpecH
     AmmoCostGEClass = WeaponData->AmmoCostEffect_Primary;
     CooldownTagPrimaryFire = WeaponData->CooldownGameplayTag_Primary;
 
+
     if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
     {
         CancelAbility(Handle, ActorInfo, ActivationInfo, true);
@@ -155,7 +158,6 @@ void UGA_ChargedShotgun_PrimaryFire::ActivateAbility(const FGameplayAbilitySpecH
         return;
     }
 
-    bInputReleasedEarly = false;
     StartCharge();
 }
 
@@ -164,6 +166,7 @@ void UGA_ChargedShotgun_PrimaryFire::StartCharge()
     const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
     if (bIsCharging || !WeaponData || !ActorInfo || !ActorInfo->AbilitySystemComponent.Get())
     {
+        UE_LOG(LogTemp, Warning, TEXT("GA_Shotgun_PrimaryFire::StartCharge - Already charging or missing data. bIsCharging: %s"), bIsCharging ? TEXT("true") : TEXT("false"));
         return;
     }
 
@@ -198,52 +201,49 @@ void UGA_ChargedShotgun_PrimaryFire::StartCharge()
 
 void UGA_ChargedShotgun_PrimaryFire::InputReleased(float TimeHeld)
 {
-    UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Input Released after %f seconds."), TimeHeld);
+    UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Input Released after %f seconds. bIsCharging: %s, bChargeComplete: %s"),
+        TimeHeld,
+        bIsCharging ? TEXT("true") : TEXT("false"),
+        bChargeComplete ? TEXT("true") : TEXT("false"));
 
-    // Set the flag immediately
-    bInputReleasedEarly = true;
-
-    if (bIsCharging && !bChargeComplete)
+    if (IsActive())
     {
-        UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Input released early during charge. Cancelling charge."));
+        bInputReleasedEarly = true;
 
-        // Clear the timer immediately to prevent HandleFullCharge from being called
-        if (GetWorld())
+        if (bIsCharging && !bChargeComplete)
         {
-            GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+            UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Input released early during charge. Cancelling charge."));
+
+            if (GetWorld() && ChargeTimerHandle.IsValid())
+            {
+                GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+            }
+            ApplyEarlyReleaseCooldown();
+            ResetChargeState();
+            EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
         }
-
-        ApplyEarlyReleaseCooldown();
-        ResetChargeState();
-        EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
-        return;
     }
-
-    // If we're here and charge is complete, the shot has already been fired by HandleFullCharge
-    // The ability should have already ended or will end soon
 }
 
 void UGA_ChargedShotgun_PrimaryFire::HandleFullCharge()
 {
-    UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Charge Complete. bInputReleasedEarly: %s"), bInputReleasedEarly ? TEXT("true") : TEXT("false"));
+    UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Charge Complete. bInputReleasedEarly state just before check: %s"), bInputReleasedEarly ? TEXT("true") : TEXT("false"));
 
-    // Check the flag first before doing anything else
     if (bInputReleasedEarly)
     {
-        UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Full charge reached, but input was already released. Aborting shot."));
-        // The timer was not cleared in time, but we caught it here
-        ResetChargeState();
-        EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
+        UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Full charge timer fired, but input was already released. Aborting shot."));
+        if (IsActive() && !bChargeComplete)
+        {
+            ResetChargeState();
+            EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
+        }
         return;
     }
 
     bChargeComplete = true;
+    bIsCharging = false;
 
     PerformShot();
-    ResetChargeState();
-
-    // End current ability instance. If input is still held and bRetriggerInstancedAbility is true,
-    // the system will attempt to start a new instance.
     EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
 }
 
@@ -263,15 +263,14 @@ void UGA_ChargedShotgun_PrimaryFire::PerformShot()
         return;
     }
 
-    // Get controller from Character instead of ActorInfo (more reliable on server)
     AController* Controller = Character->GetController();
-    APlayerController* PC = Cast<APlayerController>(Controller);
-
     if (!Controller)
     {
         UE_LOG(LogTemp, Warning, TEXT("GA_Shotgun_PrimaryFire::PerformShot: Missing Controller on Character."));
         return;
     }
+
+    APlayerController* PC = Cast<APlayerController>(Controller);
 
     if (AmmoCostGEClass)
     {
@@ -288,17 +287,22 @@ void UGA_ChargedShotgun_PrimaryFire::PerformShot()
 
     ApplyPrimaryFireCooldown();
 
-    FVector MuzzleLocation;
-    FRotator AimRotation; // This will be Character's control rotation for aim
-    Character->GetActorEyesViewPoint(MuzzleLocation, AimRotation); // Start with eye view for aim ray
+    FVector MuzzleLocationForEffects;
+    FRotator AimRotation;
+
+    AimRotation = Controller->GetControlRotation();
+    FVector AimDirection = AimRotation.Vector();
 
     if (EquippedWeapon->GetWeaponMeshComponent() && WeaponData->MuzzleFlashSocketName != NAME_None)
     {
-        // For effects, use actual muzzle socket, but for trace, use aim direction from camera/controller
-        MuzzleLocation = EquippedWeapon->GetWeaponMeshComponent()->GetSocketLocation(WeaponData->MuzzleFlashSocketName);
+        MuzzleLocationForEffects = EquippedWeapon->GetWeaponMeshComponent()->GetSocketLocation(WeaponData->MuzzleFlashSocketName);
     }
-    // Aim direction is based on controller's view
-    FVector AimDirection = PC->GetControlRotation().Vector();
+    else
+    {
+        FVector CamLoc;
+        Character->GetActorEyesViewPoint(CamLoc, AimRotation);
+        MuzzleLocationForEffects = CamLoc + AimDirection * 100.0f;
+    }
 
 
     UAnimMontage* FireMontage1P = WeaponData->FireMontage_1P;
@@ -307,7 +311,7 @@ void UGA_ChargedShotgun_PrimaryFire::PerformShot()
     if (MontageToPlay)
     {
         FireMontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(this, NAME_None, MontageToPlay);
-        if (FireMontageTask) // Check if task created successfully
+        if (FireMontageTask)
         {
             FireMontageTask->OnCompleted.AddDynamic(this, &UGA_ChargedShotgun_PrimaryFire::OnMontageCompleted);
             FireMontageTask->OnBlendOut.AddDynamic(this, &UGA_ChargedShotgun_PrimaryFire::OnMontageBlendOut);
@@ -320,45 +324,43 @@ void UGA_ChargedShotgun_PrimaryFire::PerformShot()
     float DamagePerPellet = 10.0f;
     TSubclassOf<UDamageType> DamageType = UDamageType::StaticClass();
 
-    // Use MuzzleLocation for the actual shot origin (visuals), but AimDirection for the line trace direction.
-    // However, for hitscan, the StartLocation of the trace often comes from the camera to match player's POV.
     FVector TraceStartLocation;
-    FRotator TempRot; // Unused for trace start
-    PC->GetPlayerViewPoint(TraceStartLocation, TempRot);
+    FRotator TempRot;
+    if (PC) PC->GetPlayerViewPoint(TraceStartLocation, TempRot);
+    else Character->GetActorEyesViewPoint(TraceStartLocation, TempRot);
 
 
     EquippedWeapon->PerformHitscanShot(
-        TraceStartLocation, // Pellet traces start from camera/eye position
-        AimDirection,       // Aim direction from controller
+        TraceStartLocation,
+        AimDirection,
         WeaponData->WeaponStats.PrimaryPelletCount,
         WeaponData->WeaponStats.PrimarySpreadAngle,
         WeaponData->WeaponStats.PrimaryHitscanRange,
         DamagePerPellet,
         DamageType,
         Character,
-        PC, // Pass the PlayerController as instigator controller
+        Controller,
         WeaponData->ImpactEffectCueTag
     );
 
     if (WeaponData->MuzzleFlashCueTag.IsValid() && ActorInfo->AbilitySystemComponent.Get())
     {
         FGameplayCueParameters CueParams;
-        CueParams.Location = MuzzleLocation; // Visual effect at weapon muzzle
+        CueParams.Location = MuzzleLocationForEffects;
         CueParams.Normal = AimDirection;
         CueParams.Instigator = Character;
         CueParams.EffectContext = ActorInfo->AbilitySystemComponent->MakeEffectContext();
         if (CueParams.EffectContext.IsValid() && EquippedWeapon) CueParams.EffectContext.AddSourceObject(EquippedWeapon);
-        // Removed ScopedPredictionKey
         ActorInfo->AbilitySystemComponent->ExecuteGameplayCue(WeaponData->MuzzleFlashCueTag, CueParams);
     }
 
     if (WeaponData->ShotgunBlastSound)
     {
-        UGameplayStatics::PlaySoundAtLocation(GetWorld(), WeaponData->ShotgunBlastSound, MuzzleLocation);
+        UGameplayStatics::PlaySoundAtLocation(GetWorld(), WeaponData->ShotgunBlastSound, MuzzleLocationForEffects);
     }
     else if (WeaponData->FireSound)
     {
-        UGameplayStatics::PlaySoundAtLocation(GetWorld(), WeaponData->FireSound, MuzzleLocation);
+        UGameplayStatics::PlaySoundAtLocation(GetWorld(), WeaponData->FireSound, MuzzleLocationForEffects);
     }
 
     UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Shot Performed. Pellets: %d, Spread: %f"), WeaponData->WeaponStats.PrimaryPelletCount, WeaponData->WeaponStats.PrimarySpreadAngle);
@@ -369,13 +371,14 @@ void UGA_ChargedShotgun_PrimaryFire::ResetChargeState()
     const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
     if (!ActorInfo || !ActorInfo->AbilitySystemComponent.Get()) return;
 
-    if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle); // Added GetWorld check
+    if (GetWorld() && ChargeTimerHandle.IsValid())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+    }
     bIsCharging = false;
-    bChargeComplete = false;
 
     if (PrimaryChargeGEClass)
     {
-        // Assuming ChargeInProgressTag is granted by PrimaryChargeGEClass
         FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(FGameplayTagContainer(ChargeInProgressTag));
         ActorInfo->AbilitySystemComponent->RemoveActiveEffects(Query);
     }
@@ -407,7 +410,7 @@ void UGA_ChargedShotgun_PrimaryFire::ApplyEarlyReleaseCooldown()
 void UGA_ChargedShotgun_PrimaryFire::ApplyPrimaryFireCooldown()
 {
     UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-    if (!ASC || !WeaponData || !PrimaryFireCooldownGEClass) // Check PrimaryFireCooldownGEClass directly
+    if (!ASC || !WeaponData || !PrimaryFireCooldownGEClass)
     {
         UE_LOG(LogTemp, Warning, TEXT("GA_Shotgun_PrimaryFire: Cannot apply primary fire cooldown. ASC: %s, WeaponData: %s, PrimaryFireCooldownGEClass: %s"),
             ASC ? TEXT("Valid") : TEXT("NULL"),
@@ -422,8 +425,6 @@ void UGA_ChargedShotgun_PrimaryFire::ApplyPrimaryFireCooldown()
         UE_LOG(LogTemp, Warning, TEXT("GA_Shotgun_PrimaryFire: CooldownGameplayTag_Primary is not valid in WeaponData. Cooldown might not block correctly."));
     }
 
-    // The PrimaryFireCooldownGEClass should be configured in BP to apply the CooldownTagPrimaryFire
-    // and have the correct duration (e.g., 1.0f / WeaponData->WeaponStats.PrimaryFireRate).
     ApplyGameplayEffectToOwner(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), PrimaryFireCooldownGEClass.GetDefaultObject(), GetAbilityLevel());
     UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Applied primary fire cooldown GE: %s. Cooldown Tag: %s"), *PrimaryFireCooldownGEClass->GetName(), *CooldownTagPrimaryFire.ToString());
 }
@@ -432,18 +433,17 @@ void UGA_ChargedShotgun_PrimaryFire::CancelAbility(const FGameplayAbilitySpecHan
 {
     UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: CancelAbility called."));
 
-    // Clear the timer immediately when canceling
-    if (GetWorld())
+    if (GetWorld() && ChargeTimerHandle.IsValid())
     {
         GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
     }
 
     ResetChargeState();
-    if (WaitInputReleaseTask)
+    if (WaitInputReleaseTask && WaitInputReleaseTask->IsActive())
     {
         WaitInputReleaseTask->EndTask();
     }
-    if (FireMontageTask)
+    if (FireMontageTask && FireMontageTask->IsActive())
     {
         FireMontageTask->EndTask();
     }
@@ -452,41 +452,54 @@ void UGA_ChargedShotgun_PrimaryFire::CancelAbility(const FGameplayAbilitySpecHan
 
 void UGA_ChargedShotgun_PrimaryFire::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
 {
-    UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: EndAbility called. WasCancelled: %s"), bWasCancelled ? TEXT("true") : TEXT("false"));
-    if (bWasCancelled)
+    UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: EndAbility called. WasCancelled: %s. bIsCharging: %s, bChargeComplete: %s, bInputReleasedEarly: %s"),
+        bWasCancelled ? TEXT("true") : TEXT("false"),
+        bIsCharging ? TEXT("true") : TEXT("false"),
+        bChargeComplete ? TEXT("true") : TEXT("false"),
+        bInputReleasedEarly ? TEXT("true") : TEXT("false")
+    );
+
+    if (bIsCharging || (bWasCancelled && !bInputReleasedEarly))
     {
         ResetChargeState();
     }
 
-    if (WaitInputReleaseTask)
+    if (GetWorld() && ChargeTimerHandle.IsValid())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+    }
+    if (WaitInputReleaseTask && WaitInputReleaseTask->IsActive())
     {
         WaitInputReleaseTask->EndTask();
     }
-    if (FireMontageTask)
+    if (FireMontageTask && FireMontageTask->IsActive())
     {
-        FireMontageTask->EndTask(); // Ensure montage task is cleaned up
+        FireMontageTask->EndTask();
     }
+
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
 void UGA_ChargedShotgun_PrimaryFire::OnMontageCompleted()
 {
-    // Current logic in PerformShot/HandleFullCharge handles ending the ability.
-    // This callback is here if specific logic needs to run when montage finishes *after* the shot.
-    // For example, if ability should only end after montage.
 }
 
 void UGA_ChargedShotgun_PrimaryFire::OnMontageBlendOut()
 {
-    // Similar to OnMontageCompleted.
 }
 
 void UGA_ChargedShotgun_PrimaryFire::OnMontageInterrupted()
 {
-    CancelAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true);
+    if (IsActive())
+    {
+        CancelAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true);
+    }
 }
 
 void UGA_ChargedShotgun_PrimaryFire::OnMontageCancelled()
 {
-    CancelAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true);
+    if (IsActive())
+    {
+        CancelAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true);
+    }
 }
