@@ -32,8 +32,8 @@ public:
     virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 
     /** Called when the input button for this ability is released. Crucial for firing the stored shot. */
-    UFUNCTION() // Added UFUNCTION for delegate binding
-        void InputReleased(float TimeHeld); // Changed signature
+    UFUNCTION() // No longer virtual
+        void InputReleased(float TimeHeld);
 
     /** Called when the ability ends. */
     virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
@@ -59,14 +59,14 @@ protected:
 
     bool bIsCharging;
     bool bOverchargedShotStored;
-    bool bInputWasReleasedDuringCharge; // To detect if input was let go before full charge, but after activation
+    bool bInputWasReleasedDuringCharge;
 
     // Internal helper functions
     void StartSecondaryCharge();
-    void HandleSecondaryFullCharge(); // Called when SecondaryChargeTime is met
+    void HandleSecondaryFullCharge();
     void AttemptFireOverchargedShot();
     void ApplyWeaponLockoutCooldown();
-    void ResetAbilityState(bool bClearTimers = true); // Cleans up GEs, tags, optionally timers
+    void ResetAbilityState(bool bClearTimers = true);
 
     // Montage Callbacks
     UFUNCTION()
@@ -81,19 +81,11 @@ protected:
     UFUNCTION()
     void OnMontageCancelled();
 
-    // Gameplay Tags that will be used (fetched from WeaponDataAsset or defined directly)
-    FGameplayTag ChargeSecondaryInProgressTag; // e.g., State.Weapon.Charging.Secondary
-    FGameplayTag OverchargedStateTag;        // e.g., State.Weapon.Overcharged
-    FGameplayTag WeaponLockoutTag;           // e.g., State.Weapon.Lockout (applied by Lockout GE)
+    FGameplayTag ChargeSecondaryInProgressTag;
+    FGameplayTag OverchargedStateTag;
+    FGameplayTag WeaponLockoutTag;
 
-    // Gameplay Effects (fetched from WeaponDataAsset)
     TSubclassOf<UGameplayEffect> SecondaryChargeGEClass;
     TSubclassOf<UGameplayEffect> WeaponLockoutGEClass;
     TSubclassOf<UGameplayEffect> AmmoCostGEClass;
-
-    // How-to extend in Blueprints:
-    // - Override K2_ActivateAbility for Blueprint-specific activation logic.
-    // - Override K2_CanActivateAbility for Blueprint-specific activation checks.
-    // - Create Blueprint-Callable functions for any complex Blueprint interactions needed.
-    // - GameplayCues (defined in WeaponDataAsset) will handle most visual/audio feedback.
 };

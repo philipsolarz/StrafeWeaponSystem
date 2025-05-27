@@ -18,6 +18,7 @@ class UAbilitySystemComponent; // Forward declaration
 class UStrafeAttributeSet;   // Forward declaration
 class UGameplayEffect;       // Forward declaration
 class UGameplayAbility;      // Forward declaration
+class UGA_WeaponActivate;    // Forward declaration for AbilityCDO
 
 UCLASS()
 class STRAFEWEAPONSYSTEM_API AStrafeCharacter : public ACharacter, public IAbilitySystemInterface
@@ -83,12 +84,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Weapon")
 	UInputAction* PreviousWeaponAction;
 
-	// Gameplay Tags for input actions
-	UPROPERTY(EditDefaultsOnly, Category = "Input|GameplayTags")
-	FGameplayTag PrimaryFireInputTag;
+	// Gameplay Tags for input actions (currently not used for direct activation with new method)
+	// UPROPERTY(EditDefaultsOnly, Category = "Input|GameplayTags")
+	// FGameplayTag PrimaryFireInputTag;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Input|GameplayTags")
-	FGameplayTag SecondaryFireInputTag;
+	// UPROPERTY(EditDefaultsOnly, Category = "Input|GameplayTags")
+	// FGameplayTag SecondaryFireInputTag;
 
 
 public:
@@ -111,14 +112,13 @@ protected:
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 
-	// Input handlers that will attempt to activate abilities
 	void Input_PrimaryFire_Pressed();
-	void Input_PrimaryFire_Released(); // If your ability needs a release trigger
+	void Input_PrimaryFire_Released();
 	void Input_SecondaryFire_Pressed();
-	void Input_SecondaryFire_Released(); // If your ability needs a release trigger
+	void Input_SecondaryFire_Released();
 
 
-	// Weapon Switching (old methods, might be refactored with GAS or remain as is)
+	// Weapon Switching
 	void NextWeapon();
 	void PreviousWeapon();
 
@@ -135,10 +135,14 @@ private:
 	// Store handles to granted weapon abilities to be able to remove them
 	TArray<FGameplayAbilitySpecHandle> CurrentWeaponAbilityHandles;
 
-	// Default attribute values (consider moving to a DataTable later)
+	// Default attribute values
 	UPROPERTY(EditDefaultsOnly, Category = "Abilities|Defaults")
 	TSubclassOf<UGameplayEffect> DefaultAttributesEffect;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Abilities|Defaults")
 	TArray<TSubclassOf<UGameplayAbility>> DefaultAbilities;
+
+	// Store current input IDs for equipped weapon abilities
+	int32 CurrentPrimaryFireInputID;
+	int32 CurrentSecondaryFireInputID;
 };
