@@ -20,7 +20,7 @@ UGA_ChargedShotgun_PrimaryFire::UGA_ChargedShotgun_PrimaryFire()
 {
     AbilityInputID = 100;
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
-    NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
+    NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
     bRetriggerInstancedAbility = true;
 
     bIsCharging = false;
@@ -199,36 +199,45 @@ void UGA_ChargedShotgun_PrimaryFire::StartCharge()
 void UGA_ChargedShotgun_PrimaryFire::InputReleased(float TimeHeld)
 {
     UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Input Released after %f seconds."), TimeHeld);
+
+    // Set the flag immediately
     bInputReleasedEarly = true;
 
     if (bIsCharging && !bChargeComplete)
     {
         UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Input released early during charge. Cancelling charge."));
+
+        // Clear the timer immediately to prevent HandleFullCharge from being called
+        if (GetWorld())
+        {
+            GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+        }
+
         ApplyEarlyReleaseCooldown();
         ResetChargeState();
         EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
         return;
     }
-    // If charge is complete, HandleFullCharge would have ended the ability.
-    // If bRetriggerInstancedAbility is true, a new instance handles continuous fire.
-    // No need for ContinuousChargeDelayTimerHandle if relying on bRetriggerInstancedAbility.
-}
 
+    // If we're here and charge is complete, the shot has already been fired by HandleFullCharge
+    // The ability should have already ended or will end soon
+}
 
 void UGA_ChargedShotgun_PrimaryFire::HandleFullCharge()
 {
-    UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Charge Complete."));
-    bChargeComplete = true;
+    UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Charge Complete. bInputReleasedEarly: %s"), bInputReleasedEarly ? TEXT("true") : TEXT("false"));
 
+    // Check the flag first before doing anything else
     if (bInputReleasedEarly)
     {
-        UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Full charge reached, but input was released just prior. Aborting shot. InputReleased should have handled termination."));
-        // InputReleased should have already called ApplyEarlyReleaseCooldown, ResetChargeState, and EndAbility.
-        // If this timer fires *exactly* as input is released, InputReleased might not have set bInputReleasedEarly in time for this check,
-        // but its EndAbility call would likely prevent PerformShot.
-        // To be safe, ensure we don't proceed if bInputReleasedEarly is true.
+        UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: Full charge reached, but input was already released. Aborting shot."));
+        // The timer was not cleared in time, but we caught it here
+        ResetChargeState();
+        EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
         return;
     }
+
+    bChargeComplete = true;
 
     PerformShot();
     ResetChargeState();
@@ -422,6 +431,13 @@ void UGA_ChargedShotgun_PrimaryFire::ApplyPrimaryFireCooldown()
 void UGA_ChargedShotgun_PrimaryFire::CancelAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateCancelAbility)
 {
     UE_LOG(LogTemp, Log, TEXT("GA_Shotgun_PrimaryFire: CancelAbility called."));
+
+    // Clear the timer immediately when canceling
+    if (GetWorld())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+    }
+
     ResetChargeState();
     if (WaitInputReleaseTask)
     {
@@ -431,8 +447,6 @@ void UGA_ChargedShotgun_PrimaryFire::CancelAbility(const FGameplayAbilitySpecHan
     {
         FireMontageTask->EndTask();
     }
-    // If ContinuousChargeDelayTimerHandle was used:
-    // if(GetWorld()) GetWorld()->GetTimerManager().ClearTimer(ContinuousChargeDelayTimerHandle);
     Super::CancelAbility(Handle, ActorInfo, ActivationInfo, bReplicateCancelAbility);
 }
 
@@ -452,8 +466,6 @@ void UGA_ChargedShotgun_PrimaryFire::EndAbility(const FGameplayAbilitySpecHandle
     {
         FireMontageTask->EndTask(); // Ensure montage task is cleaned up
     }
-    // If ContinuousChargeDelayTimerHandle was used:
-    // if(GetWorld()) GetWorld()->GetTimerManager().ClearTimer(ContinuousChargeDelayTimerHandle);
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
