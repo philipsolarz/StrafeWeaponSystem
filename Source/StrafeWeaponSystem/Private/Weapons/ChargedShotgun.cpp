@@ -33,8 +33,19 @@ void AChargedShotgun::PerformHitscanShot(
     AController* InstigatorController,
     FGameplayTag OptionalImpactCueTag)
 {
-    if (!GetWorld() || !InstigatorPawn || !InstigatorController)
+    UE_LOG(LogTemp, Log, TEXT("AChargedShotgun::PerformHitscanShot - PelletCount: %d, Spread: %f, Range: %f"),
+        PelletCount, SpreadAngle, HitscanRange);
+
+    UWorld* World = GetWorld();
+    if (!World)
     {
+        UE_LOG(LogTemp, Error, TEXT("AChargedShotgun::PerformHitscanShot - No World!"));
+        return;
+    }
+
+    if (!InstigatorPawn || !InstigatorController)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AChargedShotgun::PerformHitscanShot - Missing InstigatorPawn or Controller"));
         return;
     }
 

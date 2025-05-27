@@ -16,6 +16,7 @@
 
 UGA_ChargedShotgun_SecondaryFire::UGA_ChargedShotgun_SecondaryFire()
 {
+    AbilityInputID = 101;
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
     NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated; // Server controls charging & firing
 
@@ -33,6 +34,8 @@ UGA_ChargedShotgun_SecondaryFire::UGA_ChargedShotgun_SecondaryFire()
     UpdatedTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.SecondaryFire")));
     UpdatedTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.ChargedShotgun.SecondaryFire")));
     SetAssetTags(UpdatedTags);
+
+    ActivationBlockedTags.AddTag(WeaponLockoutTag);
 }
 
 bool UGA_ChargedShotgun_SecondaryFire::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, OUT FGameplayTagContainer* OptionalRelevantTags) const

@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Abilities/GameplayAbility.h"
+#include "GA_WeaponActivate.h"
 #include "GameplayTagContainer.h"
 #include "GA_ChargedShotgun_SecondaryFire.generated.h"
 
@@ -18,7 +18,7 @@ class UAbilityTask_PlayMontageAndWait;
  * firing on input release, and applying a weapon lockout cooldown.
  */
 UCLASS(Blueprintable)
-class STRAFEWEAPONSYSTEM_API UGA_ChargedShotgun_SecondaryFire : public UGameplayAbility
+class STRAFEWEAPONSYSTEM_API UGA_ChargedShotgun_SecondaryFire : public UGA_WeaponActivate
 {
     GENERATED_BODY()
 

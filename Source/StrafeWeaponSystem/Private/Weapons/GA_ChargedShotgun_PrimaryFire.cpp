@@ -18,6 +18,7 @@
 
 UGA_ChargedShotgun_PrimaryFire::UGA_ChargedShotgun_PrimaryFire()
 {
+    AbilityInputID = 100;
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
     NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
     bRetriggerInstancedAbility = true;
@@ -29,15 +30,21 @@ UGA_ChargedShotgun_PrimaryFire::UGA_ChargedShotgun_PrimaryFire()
     ChargeInProgressTag = FGameplayTag::RequestGameplayTag(FName("State.Weapon.ChargedShotgun.Charging.PrimaryFire"));
 
     FGameplayTagContainer UpdatedTags = GetAssetTags();
-    UpdatedTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.SecondaryFire")));
+    UpdatedTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.PrimaryFire")));
     UpdatedTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Ability.Weapon.ChargedShotgun.PrimaryFire")));
     SetAssetTags(UpdatedTags);
+
+    // The ability should also block itself during cooldown
+    ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Cooldown.Weapon.ChargedShotgun.PrimaryFire")));
 }
 
 bool UGA_ChargedShotgun_PrimaryFire::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, OUT FGameplayTagContainer* OptionalRelevantTags) const
 {
+    UE_LOG(LogTemp, VeryVerbose, TEXT("GA_ChargedShotgun_PrimaryFire::CanActivateAbility called"));
+
     if (!Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags))
     {
+        UE_LOG(LogTemp, Warning, TEXT("GA_ChargedShotgun_PrimaryFire::CanActivateAbility - Super returned false"));
         return false;
     }
 
@@ -95,19 +102,23 @@ bool UGA_ChargedShotgun_PrimaryFire::CanActivateAbility(const FGameplayAbilitySp
 
 void UGA_ChargedShotgun_PrimaryFire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
 {
+    UE_LOG(LogTemp, Warning, TEXT("GA_ChargedShotgun_PrimaryFire::ActivateAbility called"));
     Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-    AStrafeCharacter* Character = Cast<AStrafeCharacter>(ActorInfo->AvatarActor.Get());
+    // After getting Character:
+    AStrafeCharacter* Character = GetStrafeCharacterFromActorInfo(); // Use the parent class method
     if (!Character)
     {
+        UE_LOG(LogTemp, Error, TEXT("GA_ChargedShotgun_PrimaryFire::ActivateAbility - No character found"));
         CancelAbility(Handle, ActorInfo, ActivationInfo, true);
         return;
     }
 
-    EquippedWeapon = Cast<AChargedShotgun>(Character->GetCurrentWeapon());
+    // After getting weapon:
+    EquippedWeapon = Cast<AChargedShotgun>(GetEquippedWeaponFromActorInfo()); // Use the parent class method
     if (!EquippedWeapon)
     {
-        UE_LOG(LogTemp, Error, TEXT("GA_Shotgun_PrimaryFire: Failed to cast to AChargedShotgun."));
+        UE_LOG(LogTemp, Error, TEXT("GA_ChargedShotgun_PrimaryFire::ActivateAbility - Failed to get AChargedShotgun from character"));
         CancelAbility(Handle, ActorInfo, ActivationInfo, true);
         return;
     }
@@ -237,11 +248,19 @@ void UGA_ChargedShotgun_PrimaryFire::PerformShot()
     }
 
     AStrafeCharacter* Character = Cast<AStrafeCharacter>(GetAvatarActorFromActorInfo());
-    APlayerController* PC = ActorInfo->PlayerController.Get(); // Use APlayerController for GetControlRotation
-
-    if (!Character || !PC)
+    if (!Character)
     {
-        UE_LOG(LogTemp, Warning, TEXT("GA_Shotgun_PrimaryFire::PerformShot: Missing Character or PlayerController."));
+        UE_LOG(LogTemp, Warning, TEXT("GA_Shotgun_PrimaryFire::PerformShot: Missing Character."));
+        return;
+    }
+
+    // Get controller from Character instead of ActorInfo (more reliable on server)
+    AController* Controller = Character->GetController();
+    APlayerController* PC = Cast<APlayerController>(Controller);
+
+    if (!Controller)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("GA_Shotgun_PrimaryFire::PerformShot: Missing Controller on Character."));
         return;
     }
 
