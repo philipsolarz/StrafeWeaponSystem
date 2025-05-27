@@ -1,0 +1,82 @@
+Folder PATH listing
+Volume serial number is 0451-517B
+C:.
+|   BP_CheckpointBase.uasset
+|   BP_FinishLine.uasset
+|   BP_GA_RocketLauncher_FirePrimary.uasset
+|   BP_GA_RocketLauncher_FireSecondary.uasset
+|   BP_GA_StickyGrenadeLauncher_FirePrimary.uasset
+|   BP_GA_StickyGrenadeLauncher_FireSecondary.uasset
+|   BP_GA_WeaponFire_Base.uasset
+|   BP_GE_Cooldown_RocketLauncher_PrimaryFire.uasset
+|   BP_GE_Cooldown_StickyGrenadeLauncher_PrimaryFire.uasset
+|   BP_GE_Cost_RocketLauncher_PrimaryFire_Ammo.uasset
+|   BP_GE_Cost_StickyGrenadeLauncher_PrimaryFire_Ammo.uasset
+|   BP_GE_Pickup_AddRocketAmmo_Large.uasset
+|   BP_GE_Pickup_AddRocketAmmo_Medium.uasset
+|   BP_GE_Pickup_AddRocketAmmo_Small.uasset
+|   BP_GE_Pickup_AddStickyGrenadeAmmo_Large.uasset
+|   BP_GE_Pickup_AddStickyGrenadeAmmo_Medium.uasset
+|   BP_GE_Pickup_AddStickyGrenadeAmmo_Small.uasset
+|   BP_IntermediateCheckpoint.uasset
+|   BP_PlayerState_WithRace.uasset
+|   BP_RaceGameMode.uasset
+|   BP_RaceHUD.uasset
+|   BP_RocketAmmoPickup_Large.uasset
+|   BP_RocketAmmoPickup_Medium.uasset
+|   BP_RocketAmmoPickup_Small.uasset
+|   BP_RocketLauncher.uasset
+|   BP_RocketLauncherPickup.uasset
+|   BP_RocketProjectile.uasset
+|   BP_StartLine.uasset
+|   BP_StickyGrenadeAmmoPickup_Large.uasset
+|   BP_StickyGrenadeAmmoPickup_Medium.uasset
+|   BP_StickyGrenadeAmmoPickup_Small.uasset
+|   BP_StickyGrenadeLauncher.uasset
+|   BP_StickyGrenadeLauncherPickup.uasset
+|   BP_StickyGrenadeProjectile.uasset
+|   BP_StrafeCharacter.uasset
+|   BP_StrafeGameMode.uasset
+|   BP_StrafePlayerController.uasset
+|   DA_RocketLauncher.uasset
+|   DA_StickyGrenadeLauncher.uasset
+|   filelist.txt
+|   filetree.txt
+|   GCN_Explosion_Rocket.uasset
+|   GCN_MuzzleFlash_RocketLauncher.uasset
+|   GE_StrafeCharacter_DefaultAttributes.uasset
+|   WBP_RaceHUD.uasset
+|   WBP_Scoreboard.uasset
+|   WBP_ScoreboardRow.uasset
+|   WBP_SplitTimeEntry.uasset
+|   
++---DataAssets
+|   \---Weapons
+|           DA_ChargedShotgun.uasset
+|           
++---GameModes
+|       BP_ArenaGameMode.uasset
+|       
++---GameplayAbilities
+|   \---Weapons
+|           BP_GA_ChargedShotgun_PrimaryFire.uasset
+|           BP_GA_ChargedShotgun_SecondaryFire.uasset
+|           
++---GameplayCues
+|       GCN_Weapon_ChargedShotgun_Charge_PrimaryFire.uasset
+|       GCN_Weapon_ChargedShotgun_Charge_SecondaryFire.uasset
+|       GCN_Weapon_ChargedShotgun_Impact.uasset
+|       GCN_Weapon_ChargedShotgun_MuzzleFlash.uasset
+|       GCN_Weapon_ChargedShotgun_Overcharged_SecondaryFire.uasset
+|       
++---GameplayEffects
+|       GE_ChargedShotgun_Charge_Primary.uasset
+|       GE_ChargedShotgun_Charge_Secondary.uasset
+|       GE_ChargedShotgun_Cooldown_Primary_EarlyRelease.uasset
+|       GE_ChargedShotgun_Cooldown_Secondary_Lockout.uasset
+|       GE_ChargedShotgun_Cost_Primary.uasset
+|       GE_ChargedShotgun_Cost_Secondary.uasset
+|       
+\---Weapons
+        BP_ChargedShotgun.uasset
+        
